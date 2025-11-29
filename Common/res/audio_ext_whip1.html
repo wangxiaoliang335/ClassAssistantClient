@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>纯音频 WHIP/WHEP 秒连测试</title>
+</head>
+<body>
+<h3>纯音频直播快速测试</h3>
+<button id="btnPublish">开始推送音频并播放</button>
+<br><br>
+<audio id="audioPlayer" autoplay controls></audio>
+
+<script>
+// SRS配置
+const BASE = 'https://47.100.126.194'; // 改成你的公网IP或域名+HTTPS
+const APP = 'live';
+const STREAM = 'audio_' + Date.now();
+const WHIP_URL = `${BASE}/rtc/v1/whip/?app=${APP}&stream=${STREAM}`;
+const WHEP_URL = `${BASE}/rtc/v1/whep/?app=${APP}&stream=${STREAM}`;
+
+// 可以测试先用空数组禁用 STUN，避免外网超时
+const iceServers = []; 
+// 如果公网访问需要 NAT 打洞才成功，就改成 stun.l.google.com
+// const iceServers = [{ urls: ['stun:stun.l.google.com:19302'] }];
+
+// 启用 trickle ICE：发送候选给 SRS
+function setupTrickle(pc, sdpType, url) {
+    pc.onicecandidate = async e => {
+        if (e.candidate) {
+            console.log(`Trickle ICE >>> ${sdpType} candidate:`, e.candidate.candidate);
+            // WHIP/WHEP trickle 发送方式：
+            // SRS 7.x 支持 PATCH /rtc/v1/{whip/whep}/ 
+            // 你可以按需实现发送候选的 HTTP 请求
+        }
+    };
+}
+
+// 推音频 (WHIP)
+async function whipPublishAudio() {
+    console.log("📤 开始 WHIP 音频推流...");
+    const pc = new RTCPeerConnection({ iceServers, sdpSemantics: 'unified-plan' });
+    setupTrickle(pc, 'publish', WHIP_URL);
+
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+
+    // 不等 ICE 完成，立即发送 SDP
+    const res = await fetch(WHIP_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/sdp' },
+        body: pc.localDescription.sdp
+    });
+    if (!res.ok) throw new Error('WHIP 错误: ' + res.status);
+
+    const answerSdp = await res.text();
+    await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+
+    console.log("✅ WHIP 推流端握手已完成");
+    window._pubPc = pc;
+}
+
+// 播音频 (WHEP)
+async function whepPlayAudio() {
+    console.log("📥 开始 WHEP 音频播放...");
+    const pc = new RTCPeerConnection({ iceServers, sdpSemantics: 'unified-plan' });
+    setupTrickle(pc, 'play', WHEP_URL);
+
+    pc.ontrack = event => {
+        console.log("🎧 收到音频轨道", event.streams);
+        const audioElem = document.getElementById('audioPlayer');
+        if (!audioElem.srcObject) {
+            audioElem.srcObject = event.streams[0];
+        }
+    };
+
+    pc.addTransceiver('audio', { direction: 'recvonly' });
+
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+
+    // 不等 ICE 完成，立即发送 SDP
+    const res = await fetch(WHEP_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/sdp' },
+        body: pc.localDescription.sdp
+    });
+    if (!res.ok) throw new Error('WHEP 错误: ' + res.status);
+
+    const answerSdp = await res.text();
+    await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+
+    console.log("✅ WHEP 播放端握手已完成");
+    window._subPc = pc;
+}
+
+// 按钮事件：推流成功后立刻播放
+document.getElementById('btnPublish').onclick = async () => {
+    try {
+        await whipPublishAudio();
+        await whepPlayAudio();  // 秒开播放
+    } catch (e) {
+        console.error('❌ 操作失败', e);
+        alert('失败：' + e.message);
+    }
+};
+</script>
+</body>
+</html>

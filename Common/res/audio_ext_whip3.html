@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>纯音频 WHIP/WHEP 秒开 + Trickle ICE 测试</title>
+</head>
+<body>
+<h3>纯音频直播（秒开播放）</h3>
+<button id="btnPublish">开始推送并播放</button>
+<button id="btnStop">停止直播</button>
+<br><br>
+<audio id="audioPlayer" autoplay controls></audio>
+
+<script>
+const BASE = 'https://47.100.126.194'; // 改成你的 SRS 地址（建议 https）
+const APP = 'live';
+const STREAM = 'audio_' + Date.now();
+const WHIP_URL = `${BASE}/rtc/v1/whip/?app=${APP}&stream=${STREAM}`;
+const WHEP_URL = `${BASE}/rtc/v1/whep/?app=${APP}&stream=${STREAM}`;
+
+// 同网测试用空数组，公网 NAT 才用 STUN
+const iceServers = [];
+
+// Trickle ICE：边收集候选边发给 SRS
+function setupTrickle(pc, trickleUrl) {
+    pc.onicecandidate = async e => {
+        if (e.candidate) {
+            console.log("📡 Trickle ICE candidate:", e.candidate.candidate);
+            try {
+                await fetch(trickleUrl, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/trickle-ice-sdpfrag' },
+                    body: 'a=' + e.candidate.candidate
+                });
+            } catch (err) {
+                console.warn("⚠️ 发送候选失败:", err);
+            }
+        } else {
+            console.log("✅ ICE候选收集完成");
+        }
+    };
+}
+
+// 推音频 (WHIP)
+async function whipPublishAudio() {
+    console.log("📤 推流端开始握手...");
+    const pc = new RTCPeerConnection({ iceServers, sdpSemantics: 'unified-plan' });
+    window._pubPc = pc;
+    setupTrickle(pc, WHIP_URL);
+
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    window._pubStream = stream;
+    stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+
+    const res = await fetch(WHIP_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/sdp' },
+        body: pc.localDescription.sdp
+    });
+    const answerSdp = await res.text();
+    await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+
+    console.log("✅ 推流端准备完毕");
+}
+
+// 播音频 (WHEP)
+async function whepPlayAudio() {
+    console.log("📥 播放端开始握手...");
+    const pc = new RTCPeerConnection({ iceServers, sdpSemantics: 'unified-plan' });
+    window._subPc = pc;
+    setupTrickle(pc, WHEP_URL);
+
+    pc.ontrack = event => {
+        console.log("🎧 收到音频轨道", event.streams);
+        const audioElem = document.getElementById('audioPlayer');
+        if (!audioElem.srcObject) {
+            audioElem.srcObject = event.streams[0];
+        }
+    };
+
+    pc.addTransceiver('audio', { direction: 'recvonly' });
+
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+
+    const res = await fetch(WHEP_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/sdp' },
+        body: pc.localDescription.sdp
+    });
+    const answerSdp = await res.text();
+    await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+
+    console.log("✅ 播放端准备完毕");
+}
+
+// 停止直播
+function stopLive() {
+    console.log("🛑 停止直播...");
+
+    // 停止推流端
+    if (window._pubPc) {
+        window._pubPc.close();
+        window._pubPc = null;
+    }
+    if (window._pubStream) {
+        window._pubStream.getTracks().forEach(t => t.stop());
+        window._pubStream = null;
+    }
+
+    // 停止播放端
+    if (window._subPc) {
+        window._subPc.close();
+        window._subPc = null;
+    }
+
+    // 清除播放器音频
+    const audioElem = document.getElementById('audioPlayer');
+    audioElem.srcObject = null;
+
+    console.log("✅ 已停止推流和播放");
+}
+
+// 事件绑定
+document.getElementById('btnPublish').onclick = async () => {
+    try {
+        await whipPublishAudio();
+        await whepPlayAudio();
+    } catch (e) {
+        console.error('❌ 失败:', e);
+        alert('失败：' + e.message);
+    }
+};
+
+document.getElementById('btnStop').onclick = stopLive;
+</script>
+</body>
+</html>

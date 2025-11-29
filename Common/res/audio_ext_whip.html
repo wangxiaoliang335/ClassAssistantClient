@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>纯音频 WHIP/WHEP 测试</title>
+</head>
+<body>
+<h3>纯音频直播测试</h3>
+<button id="btnPublish">开始推送音频并播放</button>
+<br><br>
+<audio id="audioPlayer" autoplay controls></audio>
+
+<script>
+const BASE = 'https://47.100.126.194'; // 替换成你的公网IP或域名
+const APP = 'live';
+const STREAM = 'audio_' + Date.now(); // 自动生成唯一流名
+const WHIP_URL = `${BASE}/rtc/v1/whip/?app=${APP}&stream=${STREAM}`;
+const WHEP_URL = `${BASE}/rtc/v1/whep/?app=${APP}&stream=${STREAM}`;
+const iceServers = [{ urls: ['stun:stun.l.google.com:19302'] }];
+
+// 等 ICE 完成
+async function gatherComplete(pc) {
+    if (pc.iceGatheringState === 'complete') return;
+    await new Promise(resolve => {
+        const checkState = () => {
+            if (pc.iceGatheringState === 'complete') {
+                pc.removeEventListener('icegatheringstatechange', checkState);
+                resolve();
+            }
+        };
+        pc.addEventListener('icegatheringstatechange', checkState);
+    });
+}
+
+// 推送音频
+async function whipPublishAudio() {
+    console.log("������ 开始 WHIP 音频推流...");
+    const pc = new RTCPeerConnection({ iceServers, sdpSemantics: 'unified-plan' });
+    window._pubPc = pc;
+
+    // 只采集音频，不采视频
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    console.log("������ 已获取麦克风音频流", stream);
+
+    stream.getTracks().forEach(track => {
+        console.log("➕ 添加音频轨道", track);
+        pc.addTrack(track, stream);
+    });
+
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    await gatherComplete(pc);
+
+    const res = await fetch(WHIP_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/sdp' },
+        body: pc.localDescription.sdp
+    });
+    if (!res.ok) throw new Error('WHIP HTTP 错误: ' + res.status);
+
+    const answerSdp = await res.text();
+    await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+    console.log("✅ WHIP 音频推流成功");
+}
+
+// 播放音频
+async function whepPlayAudio() {
+    console.log("������ 开始 WHEP 音频播放...");
+    const pc = new RTCPeerConnection({ iceServers, sdpSemantics: 'unified-plan' });
+    window._subPc = pc;
+
+    pc.ontrack = event => {
+        console.log("������ 收到音频流 ontrack", event.streams);
+        const audioElem = document.getElementById('audioPlayer');
+        if (!audioElem.srcObject) {
+            audioElem.srcObject = event.streams[0];
+            console.log("������ 已绑定音频流到 <audio> 标签");
+        }
+    };
+
+    // 播放端只接收音频
+    pc.addTransceiver('audio', { direction: 'recvonly' });
+
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    await gatherComplete(pc);
+
+    const res = await fetch(WHEP_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/sdp' },
+        body: pc.localDescription.sdp
+    });
+    if (!res.ok) throw new Error('WHEP HTTP 错误: ' + res.status);
+
+    const answerSdp = await res.text();
+    await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+    console.log("✅ WHEP 音频播放成功");
+}
+
+// 按钮：先推流，2秒后播放
+document.getElementById('btnPublish').onclick = async () => {
+    try {
+        await whipPublishAudio();
+        setTimeout(whepPlayAudio, 2000);
+    } catch (e) {
+        console.error('❌ 操作失败', e);
+        alert('失败：' + e.message);
+    }
+};
+</script>
+</body>
+</html>
+

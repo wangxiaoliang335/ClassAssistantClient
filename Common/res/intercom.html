@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>对讲</title>
+	<style>
+		* {
+			margin: 0;
+			padding: 0;
+			box-sizing: border-box;
+		}
+		
+		body {
+			font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+			background: rgba(0, 0, 0, 0.3);
+			backdrop-filter: blur(10px);
+			display: flex;
+			justify-content: center;
+			align-items: center;
+			min-height: 100vh;
+			padding: 20px;
+		}
+		
+		.container {
+			width: 90%;
+			max-width: 800px;
+			background: #3C3C3C;
+			border-radius: 12px;
+			overflow: hidden;
+			box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+		}
+		
+		.header {
+			background: #2C2C2C;
+			padding: 15px 20px;
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+			border-bottom: 1px solid #4C4C4C;
+		}
+		
+		.header-title {
+			display: flex;
+			align-items: center;
+			gap: 10px;
+			color: white;
+			font-size: 18px;
+			font-weight: 500;
+		}
+		
+		.close-btn {
+			background: none;
+			border: none;
+			color: white;
+			font-size: 24px;
+			cursor: pointer;
+			padding: 0;
+			width: 30px;
+			height: 30px;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+		}
+		
+		.close-btn:hover {
+			background: rgba(255, 255, 255, 0.1);
+			border-radius: 4px;
+		}
+		
+		.header-buttons {
+			display: flex;
+			gap: 10px;
+		}
+		
+		.btn {
+			background: #4C4C4C;
+			border: none;
+			color: white;
+			padding: 8px 16px;
+			border-radius: 6px;
+			cursor: pointer;
+			font-size: 14px;
+			transition: background 0.2s;
+		}
+		
+		.btn:hover {
+			background: #5C5C5C;
+		}
+		
+		.connection-status {
+			padding: 10px 20px;
+			color: #ffeb3b;
+			font-size: 12px;
+			background: #2C2C2C;
+			border-bottom: 1px solid #4C4C4C;
+		}
+		
+		.participants-section {
+			padding: 20px;
+			border-bottom: 1px solid #4C4C4C;
+		}
+		
+		.participants-title {
+			color: white;
+			font-size: 14px;
+			margin-bottom: 15px;
+		}
+		
+		.participants-list {
+			display: flex;
+			gap: 15px;
+			overflow-x: auto;
+			padding-bottom: 10px;
+		}
+		
+		.participant {
+			flex-shrink: 0;
+			text-align: center;
+			cursor: pointer;
+		}
+		
+		.participant-avatar {
+			width: 70px;
+			height: 70px;
+			border-radius: 8px;
+			background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			color: white;
+			font-size: 24px;
+			margin-bottom: 8px;
+			border: 3px solid transparent;
+			transition: border 0.2s;
+		}
+		
+		.participant.active .participant-avatar {
+			border-color: #007AFF;
+		}
+		
+		.participant-name {
+			color: white;
+			font-size: 12px;
+			max-width: 70px;
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+		}
+		
+		.chat-section {
+			padding: 20px;
+			max-height: 400px;
+			overflow-y: auto;
+			border-bottom: 1px solid #4C4C4C;
+		}
+		
+		.message {
+			display: flex;
+			gap: 12px;
+			margin-bottom: 20px;
+		}
+		
+		.message-avatar {
+			width: 40px;
+			height: 40px;
+			border-radius: 50%;
+			background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+			flex-shrink: 0;
+		}
+		
+		.message-content {
+			flex: 1;
+		}
+		
+		.message-header {
+			display: flex;
+			gap: 8px;
+			align-items: center;
+			margin-bottom: 5px;
+		}
+		
+		.message-sender {
+			color: #9E9E9E;
+			font-size: 13px;
+			font-weight: 500;
+		}
+		
+		.message-bubble {
+			background: #4C4C4C;
+			color: white;
+			padding: 10px 15px;
+			border-radius: 8px;
+			font-size: 14px;
+			line-height: 1.5;
+			max-width: 70%;
+		}
+		
+		.input-section {
+			padding: 15px 20px;
+			display: flex;
+			gap: 10px;
+			align-items: center;
+		}
+		
+		.input-field {
+			flex: 1;
+			background: #4C4C4C;
+			border: none;
+			color: white;
+			padding: 12px 15px;
+			border-radius: 8px;
+			font-size: 14px;
+			outline: none;
+		}
+		
+		.input-field::placeholder {
+			color: #9E9E9E;
+		}
+		
+		.voice-btn {
+			width: 50px;
+			height: 50px;
+			border-radius: 50%;
+			background: #007AFF;
+			border: none;
+			color: white;
+			font-size: 20px;
+			cursor: pointer;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			transition: background 0.2s;
+		}
+		
+		.voice-btn:hover {
+			background: #0056CC;
+		}
+		
+		.voice-btn::before {
+			content: "🔊";
+		}
+		
+		/* 滚动条样式 */
+		.chat-section::-webkit-scrollbar {
+			width: 6px;
+		}
+		
+		.chat-section::-webkit-scrollbar-track {
+			background: #2C2C2C;
+		}
+		
+		.chat-section::-webkit-scrollbar-thumb {
+			background: #5C5C5C;
+			border-radius: 3px;
+		}
+		
+		.participants-list::-webkit-scrollbar {
+			height: 6px;
+		}
+		
+		.participants-list::-webkit-scrollbar-track {
+			background: #2C2C2C;
+		}
+		
+		.participants-list::-webkit-scrollbar-thumb {
+			background: #5C5C5C;
+			border-radius: 3px;
+		}
+	</style>
+</head>
+<body>
+	<div class="container">
+		<div class="header">
+			<div class="header-title">
+				<span class="close-btn" onclick="window.close()">×</span>
+				<span>对讲</span>
+			</div>
+			<div class="header-buttons">
+				<button class="btn">静音</button>
+				<button class="btn">单独</button>
+			</div>
+		</div>
+		<div id="connectionStatus" class="connection-status">
+			正在获取用户信息...
+		</div>
+		
+		<div class="participants-section">
+			<div class="participants-title">参与者</div>
+			<div class="participants-list" id="participantsList">
+				<!-- 参与者列表将通过JavaScript动态生成 -->
+			</div>
+		</div>
+		
+		<div class="chat-section" id="chatSection">
+			<div class="message">
+				<div class="message-avatar"></div>
+				<div class="message-content">
+					<div class="message-header">
+						<span class="message-sender">班主任</span>
+					</div>
+					<div class="message-bubble">李老师,今天家里有事,我们调一下课吧</div>
+				</div>
+			</div>
+			<div class="message">
+				<div class="message-avatar"></div>
+				<div class="message-content">
+					<div class="message-header">
+						<span class="message-sender">语文老师</span>
+					</div>
+					<div class="message-bubble">可以</div>
+				</div>
+			</div>
+		</div>
+		
+		<div class="input-section">
+			<input type="text" class="input-field" placeholder="请输入文字...">
+			<button class="voice-btn"></button>
+		</div>
+	</div>
+	
+	<script>
+		// 从C++传入的成员数据 - 使用占位符 {{DATA_PLACEHOLDER}}
+		console.log('原始数据占位符:', '{{DATA_PLACEHOLDER}}');
+		const appData = JSON.parse('{{DATA_PLACEHOLDER}}');
+		console.log('解析后的appData:', appData);
+		const membersData = appData.members || [];
+		const currentUser = appData.current_user || {};
+		const groupId = appData.group_id || '';  // 班级群的唯一编号
+		console.log('当前用户信息:', currentUser);
+		console.log('用户ID值:', currentUser.id, '类型:', typeof currentUser.id);
+		console.log('班级群唯一编号:', groupId);
+		
+		// WebSocket连接
+		let ws = null;
+		let roomId = null;
+		
+		// SRS WHIP 音频推送配置
+		const BASE = 'https://47.100.126.194'; // SRS服务器地址
+		const APP = 'live';
+		const iceServers = [{ urls: ['stun:stun.l.google.com:19302'] }];
+		let publishPc = null; // 推送音频的 PeerConnection
+		
+		// 渲染参与者列表
+		function renderParticipants() {
+			const list = document.getElementById('participantsList');
+			list.innerHTML = '';
+			
+			if (membersData && Array.isArray(membersData)) {
+				membersData.forEach((member, index) => {
+					const participant = document.createElement('div');
+					participant.className = 'participant' + (index === 0 ? ' active' : '');
+					
+					const avatar = document.createElement('div');
+					avatar.className = 'participant-avatar';
+					// 使用名字的首字符作为头像
+					avatar.textContent = member.name ? member.name.charAt(0) : '?';
+					
+					const name = document.createElement('div');
+					name.className = 'participant-name';
+					name.textContent = member.name || member.id;
+					name.title = member.id + ' - ' + member.name;
+					
+					participant.appendChild(avatar);
+					participant.appendChild(name);
+					
+					participant.addEventListener('click', () => {
+						// 移除所有active类
+						document.querySelectorAll('.participant').forEach(p => p.classList.remove('active'));
+						// 添加active类到当前参与者
+						participant.classList.add('active');
+					});
+					
+					list.appendChild(participant);
+				});
+			}
+		}
+		
+		// 连接WebSocket
+		function connectWebSocket() {
+			// 详细调试信息
+			console.log('=== connectWebSocket 被调用 ===');
+			console.log('currentUser:', currentUser);
+			console.log('currentUser.id:', currentUser.id);
+			console.log('currentUser.id 类型:', typeof currentUser.id);
+			console.log('currentUser 完整对象:', JSON.stringify(currentUser));
+			
+			// WebSocket URL需要包含用户ID，格式: ws://47.100.126.194:5000/ws/{用户ID}
+			const userId = (currentUser.id || '').toString().trim();
+			console.log('处理后的userId:', userId);
+			console.log('userId长度:', userId.length);
+			
+			if (!userId) {
+				console.error('无法连接WebSocket：缺少用户ID');
+				console.error('currentUser完整对象:', JSON.stringify(currentUser));
+				console.error('appData完整对象:', JSON.stringify(appData));
+				alert('错误：无法获取用户ID！\n请检查用户信息是否正确传递。\n\ncurrentUser: ' + JSON.stringify(currentUser));
+				return;  // 重要：如果用户ID为空，不连接WebSocket
+			}
+			
+			// 再次验证userId不为空
+			if (!userId || userId.length === 0) {
+				console.error('严重错误：userId仍然为空，不应该到达这里！');
+				return;
+			}
+			
+			const wsUrl = 'ws://47.100.126.194:5000/ws/' + encodeURIComponent(userId);
+			console.log('正在连接WebSocket:', wsUrl);
+			console.log('用户ID:', userId);
+			console.log('编码后的用户ID:', encodeURIComponent(userId));
+			console.log('完整WebSocket URL:', wsUrl);
+			
+			const statusInfo = document.getElementById('connectionStatus');
+			if (statusInfo) {
+				statusInfo.textContent = `当前用户ID: ${userId}，WebSocket: ${wsUrl}`;
+			}
+			
+			// 创建WebSocket连接
+			console.log('准备创建WebSocket连接...');
+			ws = new WebSocket(wsUrl);
+			console.log('WebSocket对象已创建，状态:', ws.readyState);
+			
+			ws.onopen = function() {
+				console.log('WebSocket连接已建立');
+				// 连接成功后发送创建房间消息
+				createRoom();
+			};
+			
+			ws.onmessage = function(event) {
+				console.log('========================================');
+				console.log('📥 收到WebSocket消息:');
+				console.log('原始数据:', event.data);
+				console.log('数据类型:', typeof event.data);
+				console.log('数据长度:', event.data ? event.data.length : 0);
+				
+				try {
+					const message = JSON.parse(event.data);
+					console.log('解析后的消息对象:', message);
+					console.log('消息类型:', message.type);
+					console.log('完整消息内容:', JSON.stringify(message, null, 2));
+					console.log('========================================');
+					
+					handleWebSocketMessage(message);
+				} catch (e) {
+					console.error('❌ 解析WebSocket消息失败:');
+					console.error('错误:', e);
+					console.error('原始数据:', event.data);
+					console.error('========================================');
+				}
+			};
+			
+			ws.onerror = function(error) {
+				console.error('WebSocket错误:', error);
+				// 显示错误信息给用户
+				const chatSection = document.getElementById('chatSection');
+				if (chatSection) {
+					const errorMsg = document.createElement('div');
+					errorMsg.className = 'message';
+					errorMsg.innerHTML = '<div class="message-content"><div class="message-bubble" style="background: #f44336; color: white;">⚠️ WebSocket连接失败，请检查网络连接或联系管理员</div></div>';
+					chatSection.appendChild(errorMsg);
+				}
+			};
+			
+			ws.onclose = function(event) {
+				console.log('WebSocket连接已关闭', '代码:', event.code, '原因:', event.reason);
+				// 如果是因为403错误关闭，显示错误信息
+				if (event.code === 1006 || event.code === 403) {
+					const chatSection = document.getElementById('chatSection');
+					if (chatSection) {
+						const errorMsg = document.createElement('div');
+						errorMsg.className = 'message';
+						errorMsg.innerHTML = '<div class="message-content"><div class="message-bubble" style="background: #f44336; color: white;">❌ 连接被服务器拒绝（403），可能是认证失败</div></div>';
+						chatSection.appendChild(errorMsg);
+					}
+				}
+			};
+		}
+		
+		// 创建房间
+		function createRoom() {
+			console.log('=== createRoom 函数被调用 ===');
+			console.log('WebSocket状态检查 - ws对象:', ws);
+			console.log('WebSocket状态检查 - readyState:', ws ? ws.readyState : 'ws为null');
+			
+			if (!ws || ws.readyState !== WebSocket.OPEN) {
+				console.error('❌ WebSocket未连接，无法创建房间');
+				console.error('ws存在:', !!ws);
+				console.error('readyState:', ws ? ws.readyState : 'N/A');
+				console.error('WebSocket.OPEN常量值:', WebSocket.OPEN);
+				return;
+			}
+			
+			console.log('✅ WebSocket连接正常，开始创建房间');
+			
+			// 生成房间ID（使用时间戳）
+			roomId = 'room_' + Date.now();
+			console.log('生成房间ID:', roomId);
+			
+			// 验证群组ID是否存在（在创建消息之前验证）
+			console.log('检查群组ID - groupId变量:', groupId);
+			console.log('检查群组ID - groupId类型:', typeof groupId);
+			console.log('检查群组ID - groupId长度:', groupId ? groupId.length : 'undefined');
+			console.log('检查群组ID - appData.group_id:', appData.group_id);
+			
+			if (!groupId || groupId.length === 0) {
+				console.error('❌ 错误：班级群唯一编号为空，无法创建临时房间！');
+				console.error('appData完整内容:', JSON.stringify(appData));
+				const chatSection = document.getElementById('chatSection');
+				if (chatSection) {
+					const errorMsg = document.createElement('div');
+					errorMsg.className = 'message';
+					errorMsg.innerHTML = '<div class="message-content"><div class="message-bubble" style="background: #f44336; color: white;">❌ 错误：班级群唯一编号为空，无法创建临时房间！</div></div>';
+					chatSection.appendChild(errorMsg);
+					chatSection.scrollTop = chatSection.scrollHeight;
+				}
+				return;
+			}
+			
+			console.log('✅ 群组ID验证通过:', groupId);
+			
+			// 生成stream_url：使用班级群唯一编号作为stream参数
+			// 格式：https://47.100.126.194/rtc/v1/whep/?app=live&stream=<班级群的唯一编号>
+			const streamUrl = `https://47.100.126.194/rtc/v1/whep/?app=live&stream=${groupId}`;
+			console.log('生成stream_url:', streamUrl);
+			console.log('stream参数（班级群唯一编号）:', groupId);
+			
+			// 构建创建房间的消息
+			const createRoomMessage = {
+				type: "6",
+				invited_users: [],  // 初始为空数组
+				stream_url: streamUrl,
+				owner_name: currentUser.name || "用户",
+				group_id: groupId  // 班级群的唯一编号
+			};
+			
+			console.log('班级群唯一编号:', groupId);
+			console.log('班级群唯一编号长度:', groupId.length);
+			
+			console.log('========================================');
+			console.log('📤 准备发送创建房间消息:');
+			console.log('完整消息对象:', createRoomMessage);
+			console.log('消息JSON字符串:', JSON.stringify(createRoomMessage));
+			console.log('group_id字段值:', createRoomMessage.group_id);
+			console.log('========================================');
+			
+			try {
+				// 发送消息（直接发送JSON格式）
+				const messageString = JSON.stringify(createRoomMessage);
+				ws.send(messageString);
+				
+				console.log('✅ 创建房间消息已发送成功！');
+				console.log('发送的消息字符串:', messageString);
+				console.log('发送时的WebSocket状态:', ws.readyState);
+				
+				// 在页面上显示发送成功的信息
+				const chatSection = document.getElementById('chatSection');
+				if (chatSection) {
+					const successMsg = document.createElement('div');
+					successMsg.className = 'message';
+					successMsg.innerHTML = '<div class="message-content"><div class="message-bubble" style="background: #4CAF50; color: white;">✅ 创建房间消息已发送: ' + roomId + '</div></div>';
+					chatSection.appendChild(successMsg);
+					chatSection.scrollTop = chatSection.scrollHeight;
+				}
+			} catch (error) {
+				console.error('❌ 发送创建房间消息失败:', error);
+				console.error('错误详情:', error.message);
+				console.error('错误堆栈:', error.stack);
+				
+				// 在页面上显示发送失败的信息
+				const chatSection = document.getElementById('chatSection');
+				if (chatSection) {
+					const errorMsg = document.createElement('div');
+					errorMsg.className = 'message';
+					errorMsg.innerHTML = '<div class="message-content"><div class="message-bubble" style="background: #f44336; color: white;">❌ 发送创建房间消息失败: ' + error.message + '</div></div>';
+					chatSection.appendChild(errorMsg);
+				}
+			}
+		}
+		
+		// 等 ICE 完成（从 audio_ext_whip.html 提取）
+		async function gatherComplete(pc) {
+			if (pc.iceGatheringState === 'complete') return;
+			await new Promise(resolve => {
+				const checkState = () => {
+					if (pc.iceGatheringState === 'complete') {
+						pc.removeEventListener('icegatheringstatechange', checkState);
+						resolve();
+					}
+				};
+				pc.addEventListener('icegatheringstatechange', checkState);
+			});
+		}
+		
+		// 推送音频到SRS服务器（从 audio_ext_whip.html 提取）
+		async function whipPublishAudio() {
+			console.log("🎤 开始 WHIP 音频推流...");
+			
+			if (!groupId || groupId.length === 0) {
+				console.error('❌ 无法推送音频：groupId 为空');
+				return;
+			}
+			
+			// 使用 groupId 作为 stream 参数
+			const STREAM = groupId;
+			const WHIP_URL = `${BASE}/rtc/v1/whip/?app=${APP}&stream=${STREAM}`;
+			console.log('WHIP URL:', WHIP_URL);
+			console.log('Stream参数（班级群唯一编号）:', STREAM);
+			
+			try {
+				const pc = new RTCPeerConnection({ iceServers, sdpSemantics: 'unified-plan' });
+				publishPc = pc;
+				window._pubPc = pc;
+
+				// 只采集音频，不采视频
+				const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+				console.log("🎤 已获取麦克风音频流", stream);
+
+				stream.getTracks().forEach(track => {
+					console.log("➕ 添加音频轨道", track);
+					pc.addTrack(track, stream);
+				});
+
+				const offer = await pc.createOffer();
+				await pc.setLocalDescription(offer);
+				await gatherComplete(pc);
+
+				const res = await fetch(WHIP_URL, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/sdp' },
+					body: pc.localDescription.sdp
+				});
+				if (!res.ok) throw new Error('WHIP HTTP 错误: ' + res.status);
+
+				const answerSdp = await res.text();
+				await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+				console.log("✅ WHIP 音频推流成功");
+				
+				// 在页面上显示成功信息
+				const chatSection = document.getElementById('chatSection');
+				if (chatSection) {
+					const successMsg = document.createElement('div');
+					successMsg.className = 'message';
+					successMsg.innerHTML = '<div class="message-content"><div class="message-bubble" style="background: #4CAF50; color: white;">✅ 音频推流成功！Stream: ' + STREAM + '</div></div>';
+					chatSection.appendChild(successMsg);
+					chatSection.scrollTop = chatSection.scrollHeight;
+				}
+			} catch (e) {
+				console.error('❌ WHIP 音频推流失败', e);
+				
+				// 在页面上显示错误信息
+				const chatSection = document.getElementById('chatSection');
+				if (chatSection) {
+					const errorMsg = document.createElement('div');
+					errorMsg.className = 'message';
+					errorMsg.innerHTML = '<div class="message-content"><div class="message-bubble" style="background: #f44336; color: white;">❌ 音频推流失败: ' + e.message + '</div></div>';
+					chatSection.appendChild(errorMsg);
+					chatSection.scrollTop = chatSection.scrollHeight;
+				}
+			}
+		}
+		
+		// 处理WebSocket消息
+		function handleWebSocketMessage(message) {
+			console.log('========================================');
+			console.log('🔔 处理WebSocket消息:');
+			console.log('消息对象:', message);
+			console.log('消息类型:', message.type);
+			console.log('消息完整内容:', JSON.stringify(message, null, 2));
+			
+			// 获取聊天区域元素（在函数开始处声明一次）
+			const chatSection = document.getElementById('chatSection');
+			
+			// 根据消息类型进行处理
+			if (message.type !== undefined) {
+				console.log('消息有type字段，值为:', message.type);
+				switch(String(message.type)) {
+					case "room_created":
+					case "6":
+						console.log('✅ 房间创建成功！');
+						console.log('房间ID:', message.room_id);
+						if (message.room_id) {
+							roomId = message.room_id;
+							console.log('已更新roomId变量为:', roomId);
+							
+							// 在页面上显示成功信息
+							if (chatSection) {
+								const successMsg = document.createElement('div');
+								successMsg.className = 'message';
+								successMsg.innerHTML = '<div class="message-content"><div class="message-bubble" style="background: #4CAF50; color: white;">✅ 房间创建成功！房间ID: ' + message.room_id + '</div></div>';
+								chatSection.appendChild(successMsg);
+								chatSection.scrollTop = chatSection.scrollHeight;
+							}
+							
+							// 房间创建成功后，开始推送音频数据到SRS服务器
+							console.log('🎤 房间创建成功，开始推送音频...');
+							whipPublishAudio();
+						}
+						break;
+					case "room_error":
+					case "error":
+						console.error('❌ 房间创建失败:');
+						console.error('错误信息:', message.error || message.message);
+						
+						// 在页面上显示错误信息
+						if (chatSection) {
+							const errorMsg = document.createElement('div');
+							errorMsg.className = 'message';
+							errorMsg.innerHTML = '<div class="message-content"><div class="message-bubble" style="background: #f44336; color: white;">❌ 房间创建失败: ' + (message.error || message.message || '未知错误') + '</div></div>';
+							chatSection.appendChild(errorMsg);
+							chatSection.scrollTop = chatSection.scrollHeight;
+						}
+						break;
+					default:
+						console.log('📨 收到其他类型消息:');
+						console.log('类型值:', message.type);
+						console.log('完整消息:', message);
+						
+						// 显示所有收到的消息
+						if (chatSection) {
+							const infoMsg = document.createElement('div');
+							infoMsg.className = 'message';
+							infoMsg.innerHTML = '<div class="message-content"><div class="message-bubble" style="background: #2196F3; color: white;">📨 收到消息: ' + JSON.stringify(message) + '</div></div>';
+							chatSection.appendChild(infoMsg);
+							chatSection.scrollTop = chatSection.scrollHeight;
+						}
+				}
+			} else {
+				console.log('⚠️ 消息没有type字段:');
+				console.log('完整消息:', message);
+				
+				// 显示没有type的消息
+				if (chatSection) {
+					const infoMsg = document.createElement('div');
+					infoMsg.className = 'message';
+					infoMsg.innerHTML = '<div class="message-content"><div class="message-bubble" style="background: #FF9800; color: white;">⚠️ 收到无类型消息: ' + JSON.stringify(message) + '</div></div>';
+					chatSection.appendChild(infoMsg);
+					chatSection.scrollTop = chatSection.scrollHeight;
+				}
+			}
+			
+			console.log('========================================');
+		}
+		
+		// 页面加载完成后初始化
+		window.addEventListener('DOMContentLoaded', () => {
+			console.log('应用数据:', appData);
+			console.log('当前用户:', currentUser);
+			
+			// 渲染参与者列表
+			renderParticipants();
+			
+			// 连接WebSocket
+			connectWebSocket();
+		});
+		
+		// 页面关闭前关闭WebSocket连接和音频推流
+		window.addEventListener('beforeunload', () => {
+			// 停止音频推流
+			if (publishPc) {
+				publishPc.getSenders().forEach(sender => {
+					if (sender.track) {
+						sender.track.stop();
+					}
+				});
+				publishPc.close();
+				publishPc = null;
+			}
+			
+			// 关闭WebSocket连接
+			if (ws) {
+				ws.close();
+			}
+		});
+	</script>
+</body>
+</html>
+
