@@ -28,6 +28,7 @@
 #include "ui_TACMainDialog.h"
 #include "TACTrayWidget.h"
 #include "SchoolInfoDialog.h"
+#include "ClassInfoDialog.h"
 #include "TAUserMenuDialog.h"
 #include "FriendGroupDialog.h"
 #include "AudioReceiver.h"
@@ -133,6 +134,7 @@ private:
 	QPointer<TACClassWeekCourseScheduleDialog> classWeekCourseScheduldDialog;
 	QPointer<TACTrayWidget> trayWidget;
 	QPointer<SchoolInfoDialog> schoolInfoDlg;
+	QPointer<ClassInfoDialog> classInfoDlg;
 	TAHttpHandler* m_httpHandler = NULL;
 	UserInfo m_userInfo;
 	QNetworkAccessManager* m_networkManager = NULL;

@@ -314,6 +314,11 @@ void TACMainDialog::Init(QString qPhone, int user_id)
     prepareClassDialog = new TACPrepareClassDialog(this);
     desktopManagerWidget = new TACDesktopManagerWidget(this);
     schoolInfoDlg = new SchoolInfoDialog(this);
+    classInfoDlg = new ClassInfoDialog(this);
+    classInfoDlg->setBackgroundColor(WIDGET_BACKGROUND_COLOR);
+    classInfoDlg->setBorderColor(WIDGET_BORDER_COLOR);
+    classInfoDlg->setBorderWidth(WIDGET_BORDER_WIDTH);
+    classInfoDlg->setRadius(30);
     trayWidget = new TACTrayWidget(this);
     
     // 用户信息已加载后，更新管理员按钮状态
@@ -321,7 +326,33 @@ void TACMainDialog::Init(QString qPhone, int user_id)
         trayWidget->updateAdminButtonState();
     }
     
-    connect(trayWidget, &TACTrayWidget::navType, this, [=](bool checked) {
+    // 班级信息已加载后，更新班级信息按钮状态
+    ClassLoginInfo loginInfo = CommonInfo::GetClassLoginInfo();
+    if (loginInfo.isLoggedIn()) {
+        trayWidget->updateClassInfoButtonState();
+    }
+    
+    // 班级信息
+    connect(trayWidget, &TACTrayWidget::navClassInfo, this, [=](bool checked) {
+        if (classInfoDlg)
+        {
+            // 获取主屏幕几何信息（Qt 5.14+ 推荐 QScreen）
+            QScreen* screen = QApplication::primaryScreen();
+            QRect screenGeometry = screen->geometry();
+            int x = (screenGeometry.width() - classInfoDlg->width()) / 2;
+            int y = (screenGeometry.height() - classInfoDlg->height()) / 2;
+            classInfoDlg->move(x, y);
+            if (checked) {
+                classInfoDlg->InitData(); // 刷新数据
+                classInfoDlg->show();
+            } else {
+                classInfoDlg->hide();
+            }
+        }
+        });
+
+    // 桌面管理
+    connect(trayWidget, &TACTrayWidget::navDesktopManager, this, [=](bool checked) {
         if (desktopManagerWidget)
         {
             QRect rect = trayWidget->geometry();
@@ -333,19 +364,30 @@ void TACMainDialog::Init(QString qPhone, int user_id)
         }
      });
 
-    connect(trayWidget, &TACTrayWidget::navChoolInfo, this, [=](bool checked) {
-        if (schoolInfoDlg)
+    // 班级群
+    connect(trayWidget, &TACTrayWidget::navClassGroup, this, [=](bool checked) {
+        if (checked && friendGrpDlg)
         {
-            // 获取主屏幕几何信息（Qt 5.14+ 推荐 QScreen）
-            QScreen* screen = QApplication::primaryScreen();
-            QRect screenGeometry = screen->geometry();
-            int x = (screenGeometry.width() - schoolInfoDlg->width()) / 2;
-            int y = (screenGeometry.height() - schoolInfoDlg->height()) / 2;
-            schoolInfoDlg->move(x, y);
-            if (checked)
-                schoolInfoDlg->show();
-            else
-                schoolInfoDlg->hide();
+            // 获取班级ID
+            ClassLoginInfo loginInfo = CommonInfo::GetClassLoginInfo();
+            if (loginInfo.class_id.isEmpty()) {
+                qDebug() << "班级ID为空，无法打开班级群";
+                return;
+            }
+            
+            // 组合完整的班级群显示名称：年级 + 班级名称 + "的班级群"
+            // 例如："一年级六班的班级群"
+            QString displayName;
+            if (!loginInfo.grade.isEmpty() && !loginInfo.class_name.isEmpty()) {
+                displayName = loginInfo.grade + loginInfo.class_name + "的班级群";
+            } else if (!loginInfo.class_name.isEmpty()) {
+                displayName = loginInfo.class_name + "的班级群";
+            } else {
+                displayName = "班级群";
+            }
+            
+            // 直接打开对应的班级群窗口
+            friendGrpDlg->openClassGroup(loginInfo.class_id, displayName);
         }
         });
 
