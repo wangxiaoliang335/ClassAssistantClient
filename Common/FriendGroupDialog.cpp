@@ -954,6 +954,25 @@ void FriendGroupDialog::InitData()
     }
 }
 
+void FriendGroupDialog::openClassGroup(const QString& classId, const QString& groupName)
+{
+    if (classId.isEmpty()) {
+        qDebug() << "班级ID为空，无法打开班级群";
+        return;
+    }
+    
+    // 生成班级群ID：班级ID + "01"
+    QString groupId = classId + "01";
+    
+    // 使用班级名称，如果没有提供则使用默认名称
+    QString displayName = groupName.isEmpty() ? QString("班级群") : groupName;
+    
+    // 调用openScheduleForGroup打开群组窗口
+    // 参数：groupName, unique_group_id, classid, iGroupOwner, isClassGroup
+    // 对于班级端，假设是群主（可以根据实际情况调整）
+    openScheduleForGroup(displayName, groupId, classId, true, true);
+}
+
 void FriendGroupDialog::GetGroupJoinedList() { // 已加入群列表
     // 获取群列表
     int ret = TIMGroupGetJoinedGroupList([](int32_t code, const char* desc, const char* json_param, const void* user_data) {

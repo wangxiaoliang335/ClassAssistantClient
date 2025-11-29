@@ -1,5 +1,6 @@
 #pragma execution_character_set("utf-8")
 #include "ModalDialog.h"
+#include "CommonInfo.h"
 #include <qpainterpath>
 #include <QRegExp>
 #include <QMessageBox>
@@ -14,33 +15,113 @@ ModalDialog::ModalDialog(QWidget* parent)
     setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
     setModal(true);
     setAttribute(Qt::WA_TranslucentBackground);
-    setFixedSize(420, 320);
+    setFixedSize(400, 250); // 调整窗口大小，使其更紧凑，类似图片样式
 
     m_httpHandler = new TAHttpHandler(this);
     if (m_httpHandler)
     {
         connect(m_httpHandler, &TAHttpHandler::success, this, [=](const QString& responseString) {
-            //成功消息就不发送了
+            // 处理登录成功响应
             QJsonDocument jsonDoc = QJsonDocument::fromJson(responseString.toUtf8());
             if (jsonDoc.isObject()) {
                 QJsonObject obj = jsonDoc.object();
-                if (obj["data"].isObject())
-                {
-                    QJsonObject oTmp = obj["data"].toObject();
-                    QString strTmp = oTmp["message"].toString();
-                    qDebug() << "status:" << oTmp["code"].toString();
-                    qDebug() << "msg:" << oTmp["message"].toString(); // 如果 msg 是中文，也能正常输出
-                    //errLabel->setText(strTmp);
-                    user_id = oTmp["user_id"].toInt();
-                    if (strTmp == "登录成功")
-                    {
-                        accept(); // 验证通过，关闭对话框并返回 Accepted
+                // 服务器返回格式：{ "data": { "code": 200, "message": "登录成功", ... } }
+                QJsonObject dataObj;
+                if (obj.contains("data") && obj["data"].isObject()) {
+                    dataObj = obj["data"].toObject();
+                } else {
+                    dataObj = obj;
+                }
+                
+                // 获取code（可能是数字或字符串）
+                int code = -1;
+                if (dataObj["code"].isDouble()) {
+                    code = dataObj["code"].toInt();
+                } else {
+                    code = dataObj["code"].toString().toInt();
+                }
+                
+                QString message = dataObj["message"].toString();
+                qDebug() << "登录响应 - code:" << code << "message:" << message;
+                
+                // 判断登录是否成功（code为200）
+                if (code == 200 && message == "登录成功") {
+                    // 登录成功，解析并保存登录信息
+                    ClassLoginInfo loginInfo;
+                    
+                    // 解析返回的字段（新格式：从ta_classes表查询）
+                    // 服务器返回user_id字段，我们保存为class_id
+                    if (dataObj.contains("user_id")) {
+                        if (dataObj["user_id"].isString()) {
+                            loginInfo.class_id = dataObj["user_id"].toString();
+                        } else {
+                            loginInfo.class_id = QString::number(dataObj["user_id"].toInt());
+                        }
+                    }
+                    
+                    if (dataObj.contains("class_code")) {
+                        loginInfo.class_code = dataObj["class_code"].toString();
+                    }
+                    
+                    if (dataObj.contains("class_name")) {
+                        loginInfo.class_name = dataObj["class_name"].toString();
+                    }
+                    
+                    if (dataObj.contains("school_stage")) {
+                        loginInfo.school_stage = dataObj["school_stage"].toString();
+                    }
+                    
+                    if (dataObj.contains("grade")) {
+                        loginInfo.grade = dataObj["grade"].toString();
+                    }
+                    
+                    if (dataObj.contains("schoolid")) {
+                        loginInfo.schoolid = dataObj["schoolid"].toString();
+                    }
+                    
+                    if (dataObj.contains("access_token")) {
+                        loginInfo.access_token = dataObj["access_token"].toString();
+                    }
+                    
+                    if (dataObj.contains("token_type")) {
+                        loginInfo.token_type = dataObj["token_type"].toString();
+                    }
+                    
+                    // 保存到全局结构体
+                    CommonInfo::InitClassLoginInfo(loginInfo);
+                    
+                    // 兼容旧代码，设置user_id（尝试转换为整数，如果失败则使用0）
+                    if (!loginInfo.class_id.isEmpty()) {
+                        bool ok;
+                        int classIdInt = loginInfo.class_id.toInt(&ok);
+                        if (ok) {
+                            user_id = classIdInt;
+                        } else {
+                            // 如果class_id不是纯数字，使用0或保持原值
+                            user_id = 0;
+                        }
+                    }
+                    
+                    qDebug() << "登录成功 - class_id:" << loginInfo.class_id 
+                             << "class_code:" << loginInfo.class_code 
+                             << "class_name:" << loginInfo.class_name
+                             << "school_stage:" << loginInfo.school_stage
+                             << "grade:" << loginInfo.grade
+                             << "schoolid:" << loginInfo.schoolid;
+                    
+                    accept(); // 关闭对话框并返回 Accepted
+                } else {
+                    // 登录失败，显示错误信息
+                    if (errLabel) {
+                        errLabel->setText(message.isEmpty() ? "登录失败" : message);
                     }
                 }
             }
             else
             {
-                errLabel->setText("网络错误");
+                if (errLabel) {
+                    errLabel->setText("网络错误：响应格式错误");
+                }
             }
         });
 
@@ -50,18 +131,26 @@ ModalDialog::ModalDialog(QWidget* parent)
                 QJsonDocument jsonDoc = QJsonDocument::fromJson(errResponseString.toUtf8());
                 if (jsonDoc.isObject()) {
                     QJsonObject obj = jsonDoc.object();
-                    if (obj["data"].isObject())
-                    {
-                        QJsonObject oTmp = obj["data"].toObject();
-                        QString strTmp = oTmp["message"].toString();
-                        qDebug() << "status:" << oTmp["code"].toString();
-                        qDebug() << "msg:" << oTmp["message"].toString(); // 如果 msg 是中文，也能正常输出
-                        errLabel->setText(strTmp);
+                    QJsonObject dataObj;
+                    // 检查响应格式
+                    if (obj.contains("data") && obj["data"].isObject()) {
+                        dataObj = obj["data"].toObject();
+                    } else {
+                        dataObj = obj;
+                    }
+                    
+                    QString message = dataObj["message"].toString();
+                    qDebug() << "登录失败 - message:" << message;
+                    
+                    if (!message.isEmpty()) {
+                        errLabel->setText(message);
+                    } else {
+                        errLabel->setText("登录失败，请检查网络连接");
                     }
                 }
                 else
                 {
-                    errLabel->setText("网络错误");
+                    errLabel->setText("网络错误：无法连接到服务器");
                 }
             }
         });
@@ -97,14 +186,10 @@ ModalDialog::ModalDialog(QWidget* parent)
     //closeButton->setFlat(true);
     //closeButton->setCursor(Qt::PointingHandCursor);
 
-    // 标题
-    titleLabel = new QLabel("教师个人电脑登录", this);
+    // 标题 - 居中显示
+    titleLabel = new QLabel("登录", this);
     titleLabel->setStyleSheet("color: white; font-size:16px; font-weight:bold;");
-
-    pwdLoginButton = new QPushButton("密码登录", this);
-    pwdLoginButton->setFlat(true);
-    pwdLoginButton->setCursor(Qt::PointingHandCursor);
-    pwdLoginButton->setStyleSheet("color: white; font-size:14px;");
+    titleLabel->setAlignment(Qt::AlignCenter);
 
     // 关闭按钮（右上角）
     closeButton = new QPushButton(this);
@@ -117,45 +202,36 @@ ModalDialog::ModalDialog(QWidget* parent)
     connect(closeButton, &QPushButton::clicked, this, &QDialog::reject);
 
     QHBoxLayout* titleLayout = new QHBoxLayout;
-    
-    titleLayout->addWidget(titleLabel);
-    titleLayout->addSpacing(152);
-    titleLayout->addWidget(pwdLoginButton);
+    titleLayout->setContentsMargins(0, 0, 0, 0);
     titleLayout->addStretch();
-    titleLayout->addWidget(closeButton);
+    titleLayout->addWidget(titleLabel);
+    titleLayout->addStretch();
+    // 在布局中添加一个占位空间，用于放置关闭按钮
+    QWidget* closeButtonPlaceholder = new QWidget(this);
+    closeButtonPlaceholder->setFixedSize(22, 22);
+    titleLayout->addWidget(closeButtonPlaceholder);
 
-    // 手机号输入
+    // 班级编号输入 - 简化样式，类似图片中的输入框
     phoneEdit = new QLineEdit(this);
-    phoneEdit->setPlaceholderText("请输入手机号");
+    phoneEdit->setPlaceholderText("请输入系统唯一班级编号");
     phoneEdit->setStyleSheet(
-        "QLineEdit { background-color: rgba(255,255,255,0.08);"
-        "border: none; border-radius:6px; color: white; padding-left:28px; height:36px; }"
+        "QLineEdit { background-color: rgba(255,255,255,0.1);"
+        "border: none; border-radius:8px; color: white; padding: 12px; height:40px; font-size:14px; }"
+        "QLineEdit:focus { background-color: rgba(255,255,255,0.15); }"
     );
     phoneEdit->setClearButtonEnabled(true);
-    QLabel* phoneIcon = new QLabel(this);
-    phoneIcon->setPixmap(QPixmap(":/icons/phone.png").scaled(16, 16, Qt::KeepAspectRatio, Qt::SmoothTransformation));
-    phoneIcon->setFixedSize(16, 16);
-    phoneIcon->setStyleSheet("background: transparent;");
-    QHBoxLayout* phoneLayout = new QHBoxLayout;
-    phoneLayout->setContentsMargins(8, 0, 8, 0);
-    phoneLayout->addWidget(phoneIcon);
-    phoneLayout->addWidget(phoneEdit);
-    QWidget* phoneWidget = new QWidget;
-    phoneWidget->setLayout(phoneLayout);
-    phoneWidget->setStyleSheet("background-color: rgba(255,255,255,0.08); border-radius:6px;");
 
-    // 验证码输入
+    // 验证码输入 - 保留但隐藏，用于兼容旧代码
     codeEdit = new QLineEdit(this);
     codeEdit->setPlaceholderText("请输入验证码");
     codeEdit->setStyleSheet(
-        "QLineEdit { background-color: rgba(255,255,255,0.08);"
-        "border:none; border-radius:6px; color:white; padding-left:28px; height:36px; }"
+        "QLineEdit { background-color: rgba(255,255,255,0.1);"
+        "border:none; border-radius:8px; color:white; padding: 12px; height:40px; font-size:14px; }"
+        "QLineEdit:focus { background-color: rgba(255,255,255,0.15); }"
     );
     codeEdit->setClearButtonEnabled(true);
-    QLabel* codeIcon = new QLabel(this);
-    codeIcon->setPixmap(QPixmap(":/icons/code.png").scaled(16, 16, Qt::KeepAspectRatio, Qt::SmoothTransformation));
-    codeIcon->setFixedSize(16, 16);
-    codeIcon->setStyleSheet("background: transparent;");
+    codeEdit->hide(); // 隐藏验证码输入框，简化界面
+    
     //getCodeButton = new QPushButton("获取验证码", this);
     getCodeButton = new QPushButton(tr("获取验证码"), this);
     getCodeButton->setStyleSheet(
@@ -163,34 +239,22 @@ ModalDialog::ModalDialog(QWidget* parent)
         "QPushButton:hover { background-color: rgba(255,255,255,0.25); }"
     );
     getCodeButton->setCursor(Qt::PointingHandCursor);
+    getCodeButton->hide(); // 隐藏获取验证码按钮
 
-    QHBoxLayout* codeLayout = new QHBoxLayout;
-    codeLayout->setContentsMargins(8, 0, 8, 0);
-    codeLayout->addWidget(codeIcon);
-    codeLayout->addWidget(codeEdit);
-    codeLayout->addSpacing(5);
-    codeLayout->addWidget(getCodeButton);
-    QWidget* codeWidget = new QWidget;
-    codeWidget->setLayout(codeLayout);
-    codeWidget->setStyleSheet("background-color: rgba(255,255,255,0.08); border-radius:6px;");
-
-    // 登录按钮
-    loginButton = new QPushButton("登 录", this);
+    // 确定按钮 - 蓝色样式，类似图片中的按钮
+    loginButton = new QPushButton("确定", this);
     loginButton->setStyleSheet(
-        "QPushButton { background-color: #2E6BE6; color: white; font-size:15px; font-weight:bold; border-radius: 6px; height:38px; }"
+        "QPushButton { background-color: #2E6BE6; color: white; font-size:15px; font-weight:bold; border-radius: 8px; height:42px; }"
         "QPushButton:hover { background-color: #5688E6; }"
+        "QPushButton:pressed { background-color: #1E5BD6; }"
     );
     loginButton->setCursor(Qt::PointingHandCursor);
 
-    // 底部
-    registerLabel = new QLabel("还没有账号？ <a style='color:#4A90E2;' href='#'>立即注册</a>", this);
-    registerLabel->setTextFormat(Qt::RichText);
-    registerLabel->setTextInteractionFlags(Qt::TextBrowserInteraction);
-    registerLabel->setStyleSheet("color: white; font-size:12px;");
-    resetPwdLabel = new QLabel("<a style='color:white;' href='#'>重置密码</a>", this);
-    resetPwdLabel->setTextFormat(Qt::RichText);
-    resetPwdLabel->setTextInteractionFlags(Qt::TextBrowserInteraction);
-    resetPwdLabel->setStyleSheet("color: white; font-size:12px;");
+    // 底部 - 移除注册和重置密码链接
+    registerLabel = new QLabel("", this);
+    registerLabel->hide();
+    resetPwdLabel = new QLabel("", this);
+    resetPwdLabel->hide();
 
     QHBoxLayout* bottomLayout = new QHBoxLayout;
     bottomLayout->addWidget(registerLabel);
@@ -200,19 +264,19 @@ ModalDialog::ModalDialog(QWidget* parent)
     errLabel = new QLabel(NULL, this);
     errLabel->setStyleSheet("color: red; font-size:16px; font-weight:bold;");
 
-    // 主布局
-    //QVBoxLayout* mainLayout = new QVBoxLayout;
+    // 主布局 - 简化布局，类似图片样式
     mainLayout->addLayout(titleLayout);
-    mainLayout->addSpacing(10);
-    mainLayout->addWidget(phoneWidget);
-    mainLayout->addSpacing(10);
-    mainLayout->addWidget(codeWidget);
-    mainLayout->addSpacing(15);
+    mainLayout->addSpacing(30);
+    mainLayout->addWidget(phoneEdit);
+    // 验证码输入框初始隐藏
+    mainLayout->addWidget(codeEdit);
+    mainLayout->addSpacing(20);
     mainLayout->addWidget(loginButton);
-    mainLayout->addStretch();
+    mainLayout->addSpacing(10);
     mainLayout->addWidget(errLabel);
+    mainLayout->addStretch();
     mainLayout->addLayout(bottomLayout);
-    mainLayout->setContentsMargins(16, 16, 16, 16);
+    mainLayout->setContentsMargins(24, 20, 24, 24);
     setLayout(mainLayout);
 
     // 信号
@@ -220,7 +284,7 @@ ModalDialog::ModalDialog(QWidget* parent)
     connect(getCodeButton, &QPushButton::clicked, this, &ModalDialog::onGetCodeClicked);
     connect(&countdownTimer, &QTimer::timeout, this, &ModalDialog::onTimerTick);
     connect(loginButton, &QPushButton::clicked, this, &ModalDialog::onLoginClicked);
-    connect(pwdLoginButton, &QPushButton::clicked, this, &ModalDialog::onPwdLoginClicked);
+    // 移除密码登录按钮的信号连接
     // 连接 linkActivated 信号
     connect(registerLabel, &QLabel::linkActivated, this, [=](const QString& link) {
         //qDebug() << "用户点击了链接，href=" << link;
@@ -329,7 +393,10 @@ void ModalDialog::resizeEvent(QResizeEvent* event)
 {
     QDialog::resizeEvent(event);
     //initShow();
-    closeButton->move(this->width() - 22, 0);
+    // 关闭按钮位置：右上角，留出一些边距
+    if (closeButton) {
+        closeButton->move(this->width() - closeButton->width() - 4, 4);
+    }
 }
 
 void ModalDialog::InitData()
@@ -341,9 +408,9 @@ void ModalDialog::InitData()
 
 void ModalDialog::onGetCodeClicked()
 {
-    QRegExp phoneRegex("^1[3-9]\\d{9}$");
-    if (!phoneRegex.exactMatch(phoneEdit->text())) {
-        QMessageBox::warning(this, "提示", "请输入有效的11位手机号码！");
+    // 验证班级编号不为空
+    if (phoneEdit->text().isEmpty()) {
+        QMessageBox::warning(this, "提示", "请输入系统唯一班级编号！");
         return;
     }
     // 这里执行发送验证码逻辑
@@ -382,17 +449,19 @@ void ModalDialog::onPwdLoginClicked()
 
 void ModalDialog::onLoginClicked()
 {
-    QRegExp codeRegex("^\\d{6}$");
-    if (!codeRegex.exactMatch(codeEdit->text())) {
-        QMessageBox::warning(this, "提示", "请输入6位数字验证码！");
+    // 验证班级编号不为空
+    if (phoneEdit->text().isEmpty()) {
+        QMessageBox::warning(this, "提示", "请输入系统唯一班级编号！");
         return;
     }
 
+    // 执行登录 - 发送班级编号和登录类型到服务器
     if (m_httpHandler)
     {
         QMap<QString, QString> params;
-        params["phone"] = phoneEdit->text();
-        params["verification_code"] = codeEdit->text();
+        params["class_number"] = phoneEdit->text();  // 班级唯一编号
+        params["login_type"] = "class";  // 登录类型：班级端登录
+        // 服务器登录接口地址
         m_httpHandler->post(QString("http://47.100.126.194:5000/login"), params);
     }
 }

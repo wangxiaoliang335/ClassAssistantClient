@@ -133,6 +133,9 @@
     <ClCompile Include="ModalDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="ClassInfoDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="PwdLoginModalDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -331,6 +334,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="SchoolInfoDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="ClassInfoDialog.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="QSchoolInfoWidget.h">

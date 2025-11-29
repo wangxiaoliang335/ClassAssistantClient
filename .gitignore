@@ -3,3 +3,5 @@ TeacherAssistantClient/logs/
 TeacherAssistantClient/x64/
 Common/.vs
 Common/x64
+ffmpeg-n6.0.1-win64-gpl-shared-6.0
+webrtc_sdk_template

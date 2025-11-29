@@ -3514,6 +3514,10 @@ inline void ScheduleDialog::sendPrepareClassContent(const QString& subject, cons
 	jsonObj[QStringLiteral("date")] = QDate::currentDate().toString(QStringLiteral("yyyy-MM-dd"));
 	jsonObj[QStringLiteral("sender_id")] = m_userId;
 	jsonObj[QStringLiteral("sender_name")] = m_userName;
+	QString schoolId = CommonInfo::GetData().schoolId;
+	if (!schoolId.isEmpty()) {
+		jsonObj[QStringLiteral("school_id")] = schoolId;
+	}
 	// 添加时间参数（如果提供）
 	if (!time.isEmpty()) {
 		jsonObj[QStringLiteral("time")] = time;

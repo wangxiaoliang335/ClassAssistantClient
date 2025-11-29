@@ -57,6 +57,9 @@ public:
     void GetGroupJoinedList(); // 已加入群列表
 
     void InitWebSocket();
+    
+    // 打开指定的班级群窗口
+    void openClassGroup(const QString& classId, const QString& groupName = "");
 
     void setTitleName(const QString& name);
 

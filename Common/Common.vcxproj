@@ -146,6 +146,7 @@
     <QtMoc Include="RegisterDialog.h" />
     <QtMoc Include="ResetPwdDialog.h" />
     <QtMoc Include="SchoolInfoDialog.h" />
+    <QtMoc Include="ClassInfoDialog.h" />
     <QtMoc Include="QSchoolInfoWidget.h" />
     <QtMoc Include="QClassMgr.h" />
     <QtMoc Include="MemberManagerWidget.h" />
@@ -224,6 +225,7 @@
     <ClCompile Include="MemberKickDialog.cpp" />
     <ClCompile Include="TIMRestAPI.cpp" />
     <ClCompile Include="QSchoolInfoWidget.cpp" />
+    <ClCompile Include="ClassInfoDialog.cpp" />
     <ClCompile Include="RegisterDialog.cpp" />
     <ClCompile Include="ResetPwdDialog.cpp" />
     <ClCompile Include="TABaseDialog.cpp" />
