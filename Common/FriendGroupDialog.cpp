@@ -15,6 +15,9 @@
 #include <QPixmap>
 #include <cstring>
 
+// 定义 TempRoomStorage 的静态成员变量
+QMap<QString, TempRoomInfo> TempRoomStorage::s_tempRooms;
+
 // RowItem 类实现
 RowItem::RowItem(const QString& text, QWidget* parent) : QFrame(parent)
 {

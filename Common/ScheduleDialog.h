@@ -28,6 +28,8 @@
 #include <QAudioFormat>
 #include <QIODevice>
 #include <QTimer>
+#include <QMediaPlayer>
+#include <QAudioOutput>
 #include <qprogressbar.h>
 #include <QPoint>
 #include <QBrush>
@@ -49,6 +51,7 @@
 #include <shellapi.h>
 #include <QRegularExpression>
 #include <QSet>
+#include <QMap>
 #include <string>
 #include <QProcess>
 #include <QThread>
@@ -94,6 +97,44 @@ class HeatmapViewDialog;
 //};
 //#endif
 
+// 临时房间信息结构
+struct TempRoomInfo {
+	QString room_id;
+	QString whip_url;
+	QString whep_url;
+	QString stream_name;
+	QString group_id;
+	QString owner_id;
+	QString owner_name;
+	QString owner_icon;
+};
+
+// 全局临时房间信息存储（群组ID -> 临时房间信息）
+// 用于在创建班级群时保存临时房间信息，即使 ScheduleDialog 还没有打开也能保存
+class TempRoomStorage {
+public:
+	static void saveTempRoomInfo(const QString& groupId, const TempRoomInfo& info) {
+		s_tempRooms[groupId] = info;
+		qDebug() << "已保存临时房间信息到全局存储，群组ID:" << groupId << "，房间ID:" << info.room_id;
+	}
+	
+	static TempRoomInfo getTempRoomInfo(const QString& groupId) {
+		return s_tempRooms.value(groupId, TempRoomInfo());
+	}
+	
+	static bool hasTempRoomInfo(const QString& groupId) {
+		return s_tempRooms.contains(groupId) && !s_tempRooms[groupId].room_id.isEmpty();
+	}
+	
+	static void removeTempRoomInfo(const QString& groupId) {
+		s_tempRooms.remove(groupId);
+		qDebug() << "已从全局存储中移除临时房间信息，群组ID:" << groupId;
+	}
+
+private:
+	static QMap<QString, TempRoomInfo> s_tempRooms;
+};
+
 class ClickableWidget : public QWidget
 {
 	Q_OBJECT
@@ -125,10 +166,10 @@ public:
 		setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
 		// 座位区域：10列×121像素=1210像素宽，6行×50像素=300像素高
 		// 窗口大小：宽度1238（1251×0.99），高度669（676×0.99）
-        resize(1238, 669);
+        resize(1448, 669);
         m_cornerRadius = 16;
         updateMask();
-        setStyleSheet("QDialog { background-color: #5C5C5C; color: white; border: 1px solid #5C5C5C; font-weight: bold; } "
+        setStyleSheet("QDialog { background-color: #282A2B; color: white; border: 1px solid #5C5C5C; font-weight: bold; } "
 			"QPushButton { font-size:14px; color: white; background-color: #5C5C5C; border: 1px solid #5C5C5C; font-weight: bold; } "
 			"QLabel { font-size:14px; color: white; background-color: #5C5C5C; border: 1px solid #5C5C5C; font-weight: bold; } "
 			"QLineEdit { color: white; background-color: #5C5C5C; border: 1px solid #5C5C5C; font-weight: bold; } "
@@ -424,6 +465,73 @@ public:
 		m_pWs = pWs;
 		m_chatDlg = new ChatDialog(this, m_pWs);
 		customListDlg = new CustomListDialog(m_classid, this);
+		
+			// 连接WebSocket消息信号，用于接收创建班级群和临时房间的消息
+			if (m_pWs) {
+				connect(m_pWs, &TaQTWebSocket::newMessage, this, [this](const QString& msg) {
+					// 解析JSON消息
+					QJsonParseError parseError;
+					QJsonDocument doc = QJsonDocument::fromJson(msg.toUtf8(), &parseError);
+					if (parseError.error != QJsonParseError::NoError || !doc.isObject()) {
+						return; // 不是JSON对象，忽略
+					}
+					
+					QJsonObject rootObj = doc.object();
+					QString type = rootObj.value(QStringLiteral("type")).toString();
+					
+					// 处理创建班级群消息（type: "3"），服务器会自动创建临时房间
+					if (type == QStringLiteral("3")) {
+						QString groupId = rootObj.value(QStringLiteral("group_id")).toString();
+						QString groupName = rootObj.value(QStringLiteral("groupname")).toString();
+						
+						// 检查是否是当前群组
+						if (groupId == m_unique_group_id) {
+							qDebug() << "收到创建班级群消息，群组ID:" << groupId << "，群组名称:" << groupName;
+							
+							// 解析临时房间信息
+							if (rootObj.contains(QStringLiteral("temp_room")) && rootObj.value(QStringLiteral("temp_room")).isObject()) {
+								QJsonObject tempRoom = rootObj.value(QStringLiteral("temp_room")).toObject();
+								
+								m_roomId = tempRoom.value(QStringLiteral("room_id")).toString();
+								m_whipUrl = tempRoom.value(QStringLiteral("whip_url")).toString();
+								m_whepUrl = tempRoom.value(QStringLiteral("whep_url")).toString();
+								m_streamName = tempRoom.value(QStringLiteral("stream_name")).toString();
+								
+								qDebug() << "临时房间信息已更新：";
+								qDebug() << "  房间ID:" << m_roomId;
+								qDebug() << "  推流地址:" << m_whipUrl;
+								qDebug() << "  拉流地址:" << m_whepUrl;
+								qDebug() << "  流名称:" << m_streamName;
+								
+								// 如果页面已打开，开始拉流（注释：拉流在HTML页面上进行）
+								//if (!m_whepUrl.isEmpty() && !m_isPullingStream) {
+								//	qDebug() << "房间创建成功，开始拉流，拉流地址:" << m_whepUrl;
+								//	startPullStream();
+								//}
+							}
+						}
+					}
+					// 兼容旧格式：处理room_created消息
+					else if (type == QStringLiteral("room_created") || type == QStringLiteral("6")) {
+						QString roomId = rootObj.value(QStringLiteral("room_id")).toString();
+						if (!roomId.isEmpty()) {
+							m_roomId = roomId;
+							qDebug() << "收到房间创建成功消息，房间ID:" << m_roomId;
+							
+							// 如果消息中包含拉流地址，也尝试拉流（注释：拉流在HTML页面上进行）
+							//QString whepUrl = rootObj.value(QStringLiteral("whep_url")).toString();
+							//if (!whepUrl.isEmpty()) {
+							//	m_whepUrl = whepUrl;
+							//	if (!m_isPullingStream) {
+							//		qDebug() << "收到拉流地址，开始拉流:" << m_whepUrl;
+							//		startPullStream();
+							//	}
+							//}
+						}
+					}
+				});
+			}
+			
         QVBoxLayout* mainLayout = new QVBoxLayout(this);
         mainLayout->setContentsMargins(20, 40, 20, 20);
         mainLayout->setSpacing(12);
@@ -522,42 +630,37 @@ public:
 		});
 
 		// 顶部：头像 + 班级信息 + 功能按钮 + 更多
-		QHBoxLayout* topLayout = new QHBoxLayout;
-		ClickableLabel* lblAvatar = new ClickableLabel();
-		lblAvatar->setFixedSize(50, 50);
+		QHBoxLayout* topLayout = new QHBoxLayout(this);
+		m_lblAvatar = new QLabel(this); // 改为普通QLabel，用于显示班级文字
+		m_lblAvatar->setFixedSize(50, 50);
+		m_lblAvatar->setAlignment(Qt::AlignCenter); // 文字居中
+		m_lblAvatar->setStyleSheet("background-color: #4169E1; color: white; border:1px solid #4169E1; text-align:center; font-size:14px; font-weight:bold; border-radius: 8px;");
+		QFont font = m_lblAvatar->font();
+		font.setBold(true);
+		font.setWeight(QFont::Bold);
+		m_lblAvatar->setFont(font);
 
-		QPixmap avatarPixmap(".\\res\\img\\home.png");
-		// 如果需要缩放到控件大小：
-		avatarPixmap = avatarPixmap.scaled(lblAvatar->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
-		lblAvatar->setPixmap(avatarPixmap);
-		lblAvatar->setScaledContents(true); // 自动适应 QLabel 尺寸
-
-		lblAvatar->setStyleSheet("background-color: lightgray; border:1px solid gray; text-align:center;");
-		connect(lblAvatar, &ClickableLabel::clicked, this, [&, lblAvatar]() {
-			QString file = QFileDialog::getOpenFileName(
-				this, "选择新头像", "", "Images (*.png *.jpg *.jpeg *.bmp)");
-			if (!file.isEmpty()) {
-				lblAvatar->setPixmap(QPixmap(file));
-				uploadAvatar(file);
-			}
-			});
-
-		m_lblClass = new QLabel("");
-		QPushButton* btnEdit = new QPushButton("✎");
+		m_lblClass = new QLabel("", this);
+		QPushButton* btnEdit = new QPushButton("✎", this);
 		btnEdit->setFixedSize(24, 24);
 
 	// 班级群功能按钮（普通群不显示）
-	QPushButton* btnSeat = new QPushButton("座次表");
-	QPushButton* btnCam = new QPushButton("摄像头");
-	btnTalk = new QPushButton("按住开始对讲");
-	QPushButton* btnMsg = new QPushButton("通知");
-	QPushButton* btnTask = new QPushButton("作业");
-	QString greenStyle = "background-color: green; color: white; padding: 4px 8px;";
+	QPushButton* btnSeat = new QPushButton("座次表", this);
+	QPushButton* btnCam = new QPushButton("摄像头", this);
+	btnTalk = new QPushButton("按住开始对讲", this);
+	QPushButton* btnMsg = new QPushButton("通知", this);
+	QPushButton* btnTask = new QPushButton("作业", this);
+	QString greenStyle = "background-color: #2D2E2D; color: white; padding: 4px 8px; border: none;";
 	btnSeat->setStyleSheet(greenStyle);
 	btnCam->setStyleSheet(greenStyle);
 	btnTalk->setStyleSheet(greenStyle);
 	btnMsg->setStyleSheet(greenStyle);
 	btnTask->setStyleSheet(greenStyle);
+	btnSeat->setIcon(QIcon(":/res/img/class_card_ic_seating chart@2x.png"));
+	btnCam->setIcon(QIcon(":/res/img/class_card_ic_camera@2x.png"));
+	btnTalk->setIcon(QIcon(":/res/img/class_card_ic_intercom@2x.png"));
+	btnMsg->setIcon(QIcon(":/res/img/class_card_ic_notice@2x.png"));
+	btnTask->setIcon(QIcon(":/res/img/class_card_ic_school@2x.png"));
 	
 	// 保存按钮指针，用于根据群组类型显示/隐藏
 	m_btnSeat = btnSeat;
@@ -565,7 +668,7 @@ public:
 	m_btnMsg = btnMsg;
 	m_btnTask = btnTask;
 
-		QPushButton* btnMore = new QPushButton("...");
+		QPushButton* btnMore = new QPushButton("...", this);
 		btnMore->setFixedSize(48, 24);
 		btnMore->setText("...");
 		btnMore->setStyleSheet(
@@ -600,7 +703,7 @@ public:
 			}
 		});
 
-		topLayout->addWidget(lblAvatar);
+		topLayout->addWidget(m_lblAvatar);
 		topLayout->addWidget(m_lblClass);
 		topLayout->addWidget(btnEdit);
 		topLayout->addSpacing(10);
@@ -617,17 +720,17 @@ public:
 		connectHomeworkButton(btnTask);
 
 		// 时间 + 科目行
-		QHBoxLayout* timeLayout = new QHBoxLayout;
-		m_timeButtonStyle = "background-color: royalblue; color: white; font-size:12px; min-width:40px;";
-		m_subjectButtonStyle = "background-color: royalblue; color: white; font-size:12px; min-width:50px;";
+		QHBoxLayout* timeLayout = new QHBoxLayout(this);
+		m_timeButtonStyle = "background-color: #2D2E2D; color: white; font-size:12px; min-width:40px;";
+		m_subjectButtonStyle = "background-color: #2D2E2D; color: white; font-size:12px; min-width:50px;";
 
-		QVBoxLayout* vTimes = new QVBoxLayout;
-		m_timeRowLayout = new QHBoxLayout;
-		m_subjectRowLayout = new QHBoxLayout;
-		m_specialSubjectRowLayout = new QHBoxLayout;
+		QVBoxLayout* vTimes = new QVBoxLayout(this);
+		m_timeRowLayout = new QHBoxLayout(this);
+		m_subjectRowLayout = new QHBoxLayout(this);
+		m_specialSubjectRowLayout = new QHBoxLayout(this);
 		vTimes->addLayout(m_timeRowLayout);
 		vTimes->addLayout(m_subjectRowLayout);
-		QHBoxLayout* specialRowsLayout = new QHBoxLayout;
+		QHBoxLayout* specialRowsLayout = new QHBoxLayout(this);
 		specialRowsLayout->setSpacing(4);
 		specialRowsLayout->addLayout(m_specialSubjectRowLayout);
 		specialRowsLayout->addStretch();
@@ -650,11 +753,11 @@ public:
 		line->setStyleSheet("color: red; border: 1px solid red;");
 		mainLayout->addWidget(line);
 
-		QHBoxLayout* timeIndicatorLayout = new QHBoxLayout;
+		QHBoxLayout* timeIndicatorLayout = new QHBoxLayout(this);
 		timeIndicatorLayout->setSpacing(8);
-		QLabel* lblArrow = new QLabel("↓");
+		QLabel* lblArrow = new QLabel("↓", this);
 		lblArrow->setStyleSheet("color: white; font-weight: bold;");
-		QLabel* lblTime = new QLabel("12:10");
+		QLabel* lblTime = new QLabel("12:10", this);
 		lblTime->setAlignment(Qt::AlignCenter);
 		lblTime->setFixedSize(60, 25);
 		lblTime->setStyleSheet("background-color: pink; color:red; font-weight:bold;");
@@ -665,15 +768,15 @@ public:
 
 
 		// ===== 新增中排按钮 =====
-		QHBoxLayout* middleBtnLayout = new QHBoxLayout;
+		QHBoxLayout* middleBtnLayout = new QHBoxLayout(this);
 		//QString greenStyle = "background-color: green; color: white; padding: 4px 8px;";
 
-		QPushButton* btnRandom = new QPushButton("随机点名");
-		QPushButton* btnAnalyse = new QPushButton("分断");
-		QPushButton* btnHeatmap = new QPushButton("热力图");
-		QPushButton* btnArrange = new QPushButton("排座");
-		QPushButton* btnImportSeat = new QPushButton("导入学生信息");
-		QPushButton* btnMoreBottom = new QPushButton("...");
+		QPushButton* btnRandom = new QPushButton("随机点名", this);
+		QPushButton* btnAnalyse = new QPushButton("分断", this);
+		QPushButton* btnHeatmap = new QPushButton("热力图", this);
+		QPushButton* btnArrange = new QPushButton("排座", this);
+		QPushButton* btnImportSeat = new QPushButton("导入学生信息", this);
+		QPushButton* btnMoreBottom = new QPushButton("...", this);
 		btnMoreBottom->setFixedSize(48, 24);
 		btnMoreBottom->setText("...");
 		btnMoreBottom->setStyleSheet(
@@ -689,6 +792,11 @@ public:
 			"background-color: transparent;"
 			"}"
 		);
+
+		btnRandom->setIcon(QIcon(":/res/img/class_card_ic_random@2x.png"));
+		btnAnalyse->setIcon(QIcon(":/res/img/class_card_ic_breaking@2x.png"));
+		btnHeatmap->setIcon(QIcon(":/res/img/class_card_ic_hot@2x.png"));
+		btnArrange->setIcon(QIcon(":/res/img/class_card_ic_seat@2x.png"));
 
 		connect(btnMoreBottom, &QPushButton::clicked, this, [=]() {
 			if (customListDlg && customListDlg->isHidden())
@@ -708,7 +816,7 @@ public:
 		btnImportSeat->setStyleSheet(greenStyle);
 
 		// 作业展示按钮（班级端快捷按钮）
-		QPushButton* btnHomeworkView = new QPushButton("作业");
+		QPushButton* btnHomeworkView = new QPushButton("作业", this);
 		btnHomeworkView->setStyleSheet(greenStyle);
 		connect(btnHomeworkView, &QPushButton::clicked, this, [this]() {
 			showHomeworkViewDialog();
@@ -764,12 +872,12 @@ public:
 			typeDialog->resize(300, 150);
 			
 			QVBoxLayout* typeLayout = new QVBoxLayout(typeDialog);
-			QLabel* lblTitle = new QLabel("请选择热力图类型：");
+			QLabel* lblTitle = new QLabel("请选择热力图类型：", typeDialog);
 			typeLayout->addWidget(lblTitle);
 			
-			QPushButton* btnSegment = new QPushButton("分段图1（每一段一种颜色）");
-			QPushButton* btnGradient = new QPushButton("热力图2（颜色渐变）");
-			QPushButton* btnCancel = new QPushButton("取消");
+			QPushButton* btnSegment = new QPushButton("分段图1（每一段一种颜色）", typeDialog);
+			QPushButton* btnGradient = new QPushButton("热力图2（颜色渐变）", typeDialog);
+			QPushButton* btnCancel = new QPushButton("取消", typeDialog);
 			
 			typeLayout->addWidget(btnSegment);
 			typeLayout->addWidget(btnGradient);
@@ -792,8 +900,8 @@ public:
 		});
 
 		// ===== 讲台区域 =====
-		QHBoxLayout* podiumLayout = new QHBoxLayout;
-		QPushButton* btnPodium = new QPushButton("讲台");
+		QHBoxLayout* podiumLayout = new QHBoxLayout(this);
+		QPushButton* btnPodium = new QPushButton("讲台", this);
 		btnPodium->setStyleSheet(greenStyle);
 		btnPodium->setFixedHeight(30);
 		btnPodium->setFixedWidth(80);
@@ -807,7 +915,7 @@ public:
 		// 第1行：4个座位（过道两侧各2个）
 		// 第2-8行：每行8个座位（4个数据块，每个2列，中间有3个过道）
 		// 总共60个座位
-		seatTable = new QTableWidget(8, 11); // 8行，11列（包含过道列）
+		seatTable = new QTableWidget(8, 11, this); // 8行，11列（包含过道列）
 		seatTable->horizontalHeader()->setVisible(false);
 		seatTable->verticalHeader()->setVisible(false);
 		seatTable->setStyleSheet(
@@ -831,9 +939,14 @@ public:
 		}
 		
 		// 初始化所有单元格，为每个单元格创建按钮
+		// 加载图标并裁剪为只显示左边到中间的一半
+		QPixmap originalPixmap("./res/img/class_ic_seat@2x.png");
+		QPixmap croppedPixmap = originalPixmap.copy(0, 0, originalPixmap.width() / 2 - 9, originalPixmap.height());
+		QIcon seatIcon(croppedPixmap);
 		for (int row = 0; row < 8; ++row) {
 			for (int col = 0; col < 11; ++col) {
-				QPushButton* btn = new QPushButton("");
+				QPushButton* btn = new QPushButton("", this);
+				// 不在初始化时设置图标，只有座位按钮才设置图标
 				btn->setStyleSheet(
 					"QPushButton { "
 					"background-color: #dc3545; "
@@ -842,6 +955,7 @@ public:
 					"border-radius: 4px; "
 					"padding: 5px; "
 					"font-size: 12px; "
+					"text-align: center; "
 					"}"
 					"QPushButton:hover { "
 					"background-color: #c82333; "
@@ -869,29 +983,38 @@ public:
 			QPushButton* btn = qobject_cast<QPushButton*>(seatTable->cellWidget(0, col));
 			if (btn) {
 				btn->setProperty("isSeat", true);
+				btn->setIcon(seatIcon);
+				btn->setIconSize(QSize(50, 50)); // 设置图标大小
 			}
 		}
 		// 设置第1行列3座位（讲台左边）
 		QPushButton* btnCol3 = qobject_cast<QPushButton*>(seatTable->cellWidget(0, 3));
 		if (btnCol3) {
 			btnCol3->setProperty("isSeat", true);
+			btnCol3->setIcon(seatIcon);
+			btnCol3->setIconSize(QSize(50, 50)); // 设置图标大小
 		}
 		// 设置第1行列7座位（讲台右边）
 		QPushButton* btnCol7 = qobject_cast<QPushButton*>(seatTable->cellWidget(0, 7));
 		if (btnCol7) {
 			btnCol7->setProperty("isSeat", true);
+			btnCol7->setIcon(seatIcon);
+			btnCol7->setIconSize(QSize(50, 50)); // 设置图标大小
 		}
 		// 设置第1行右侧2个座位（列9-10）
 		for (int col = 9; col < 11; ++col) {
 			QPushButton* btn = qobject_cast<QPushButton*>(seatTable->cellWidget(0, col));
 			if (btn) {
 				btn->setProperty("isSeat", true);
+				btn->setIcon(seatIcon);
+				btn->setIconSize(QSize(50, 50)); // 设置图标大小
 			}
 		}
 		seatTable->setSpan(0, 4, 1, 3); // 合并第1行的列2-8作为中央过道
 		QPushButton* aisle1Btn = qobject_cast<QPushButton*>(seatTable->cellWidget(0, 2));
 		if (aisle1Btn) {
 			aisle1Btn->setEnabled(false);
+			aisle1Btn->setIcon(QIcon()); // 移除图标
 			aisle1Btn->setStyleSheet(
 				"QPushButton { "
 				"background-color: #f0f0f0; "
@@ -903,6 +1026,7 @@ public:
 	    aisle1Btn = qobject_cast<QPushButton*>(seatTable->cellWidget(0, 8));
 		if (aisle1Btn) {
 			aisle1Btn->setEnabled(false);
+			aisle1Btn->setIcon(QIcon()); // 移除图标
 			aisle1Btn->setStyleSheet(
 				"QPushButton { "
 				"background-color: #f0f0f0; "
@@ -920,6 +1044,8 @@ public:
 				if (btn) {
 					btn->setText(""); // 可以显示座位号或学生姓名
 					btn->setProperty("isSeat", true);
+					btn->setIcon(seatIcon);
+					btn->setIconSize(QSize(50, 50)); // 设置图标大小
 				}
 			}
 			
@@ -927,6 +1053,7 @@ public:
 			QPushButton* aisle1Btn = qobject_cast<QPushButton*>(seatTable->cellWidget(row, 2));
 			if (aisle1Btn) {
 				aisle1Btn->setEnabled(false);
+				aisle1Btn->setIcon(QIcon()); // 移除图标
 				aisle1Btn->setStyleSheet(
 					"QPushButton { "
 					"background-color: #f0f0f0; "
@@ -941,6 +1068,8 @@ public:
 				if (btn) {
 					btn->setText("");
 					btn->setProperty("isSeat", true);
+					btn->setIcon(seatIcon);
+					btn->setIconSize(QSize(50, 50)); // 设置图标大小
 				}
 			}
 			
@@ -948,6 +1077,7 @@ public:
 			QPushButton* aisle2Btn = qobject_cast<QPushButton*>(seatTable->cellWidget(row, 5));
 			if (aisle2Btn) {
 				aisle2Btn->setEnabled(false);
+				aisle2Btn->setIcon(QIcon()); // 移除图标
 				aisle2Btn->setStyleSheet(
 					"QPushButton { "
 					"background-color: #f0f0f0; "
@@ -962,6 +1092,8 @@ public:
 				if (btn) {
 					btn->setText("");
 					btn->setProperty("isSeat", true);
+					btn->setIcon(seatIcon);
+					btn->setIconSize(QSize(50, 50)); // 设置图标大小
 				}
 			}
 			
@@ -969,6 +1101,7 @@ public:
 			QPushButton* aisle3Btn = qobject_cast<QPushButton*>(seatTable->cellWidget(row, 8));
 			if (aisle3Btn) {
 				aisle3Btn->setEnabled(false);
+				aisle3Btn->setIcon(QIcon()); // 移除图标
 				aisle3Btn->setStyleSheet(
 					"QPushButton { "
 					"background-color: #f0f0f0; "
@@ -983,17 +1116,20 @@ public:
 				if (btn) {
 					btn->setText("");
 					btn->setProperty("isSeat", true);
+					btn->setIcon(seatIcon);
+					btn->setIconSize(QSize(50, 50)); // 设置图标大小
 				}
 			}
 		}
 		
-		// 第1行的座位
+		// 第1行的座位（这部分代码与前面重复，但保留以确保一致性）
 		// 左侧2个座位：列0-1
 		for (int col = 0; col < 2; ++col) {
 			QPushButton* btn = qobject_cast<QPushButton*>(seatTable->cellWidget(0, col));
 			if (btn) {
 				btn->setText("");
 				btn->setProperty("isSeat", true);
+				// 图标已在前面设置，这里不需要重复设置
 			}
 		}
 		// 右侧2个座位：列9-10
@@ -1002,6 +1138,7 @@ public:
 			if (btn) {
 				btn->setText("");
 				btn->setProperty("isSeat", true);
+				// 图标已在前面设置，这里不需要重复设置
 			}
 		}
 		
@@ -1021,27 +1158,27 @@ public:
 		seatTable->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff); // 禁用水平滚动条
 		
 		// 创建水平布局使seatTable居中
-		QHBoxLayout* seatTableLayout = new QHBoxLayout;
+		QHBoxLayout* seatTableLayout = new QHBoxLayout(this);
 		seatTableLayout->addStretch();
 		seatTableLayout->addWidget(seatTable);
 		seatTableLayout->addStretch();
 		mainLayout->addLayout(seatTableLayout);
 
 		// 红框消息输入栏
-		QHBoxLayout* inputLayout = new QHBoxLayout;
+		QHBoxLayout* inputLayout = new QHBoxLayout(this);
 
-		QPushButton* btnVoice = new QPushButton("🔊");
+		QPushButton* btnVoice = new QPushButton("🔊", this);
 		btnVoice->setFixedSize(30, 30);
 
-		QLineEdit* editMessage = new QLineEdit();
+		QLineEdit* editMessage = new QLineEdit(this);
 		editMessage->setPlaceholderText("请输入消息...");
 		editMessage->setMinimumHeight(30);
 		editMessage->setEnabled(false);
 
-		QPushButton* btnEmoji = new QPushButton("😊");
+		QPushButton* btnEmoji = new QPushButton("😊", this);
 		btnEmoji->setFixedSize(30, 30);
 
-		QPushButton* btnPlus = new QPushButton("➕");
+		QPushButton* btnPlus = new QPushButton("➕", this);
 		btnPlus->setFixedSize(30, 30);
 
 		inputLayout->addStretch(1);
@@ -1068,7 +1205,7 @@ public:
 		mainLayout->addWidget(inputWidget);
 
 		// 黄色圆圈数字
-		QLabel* lblNum = new QLabel("3");
+		QLabel* lblNum = new QLabel("3", this);
 		lblNum->setAlignment(Qt::AlignCenter);
 		lblNum->setFixedSize(30, 30);
 		lblNum->setStyleSheet("background-color: yellow; color: red; font-weight: bold; font-size: 16px; border-radius: 15px;");
@@ -1271,6 +1408,8 @@ public:
 	void importSeatFromCsv(const QString& filePath); // 从CSV导入座位表
 	void fillSeatTableFromData(const QList<QStringList>& dataRows); // 将数据填充到座位表
 	void uploadSeatTableToServer(); // 上传座位表到服务器
+	// 设置座位按钮的文本和图标：有文本时不显示图标，无文本时显示图标
+	void setSeatButtonTextAndIcon(QPushButton* btn, const QString& text);
 	void fetchSeatArrangementFromServer(); // 从服务器获取座位表
 	void fetchCourseScheduleForDailyView();
 	
@@ -1298,6 +1437,34 @@ public:
 		if (m_lblClass)
 		{
 			m_lblClass->setText(groupName);
+		}
+		
+		// 从班级群名称中提取班级信息（如"一年级三班的班级群" -> "三班"）
+		if (m_lblAvatar && isClassGroup && !groupName.isEmpty()) {
+			QString classText = groupName;
+			// 查找"年级"和"班"字的位置
+			int nianjiIndex = classText.indexOf(QString::fromUtf8(u8"年级"));
+			int banIndex = classText.indexOf(QString::fromUtf8(u8"班"));
+			
+			if (nianjiIndex >= 0 && banIndex > nianjiIndex) {
+				// 如果包含"年级"且"班"字在"年级"之后，取"年级"后面到"班"字之前的内容+"班"
+				// 例如："一年级三班的班级群" -> "三班"
+				// "年级"占2个字符，所以从 nianjiIndex + 2 开始，取 banIndex - (nianjiIndex + 2) 个字符
+				QString afterNianji = classText.mid(nianjiIndex + 2, banIndex - nianjiIndex - 2); // "年级"后面到"班"字之前（不包含"班"字）
+				classText = afterNianji + QString::fromUtf8(u8"班");
+			} else if (banIndex >= 0) {
+				// 如果不包含"年级"但包含"班"字，取"班"字前一个字符+"班"
+				if (banIndex > 0) {
+					classText = classText.mid(banIndex - 1, 2); // 取"班"字前一个字符和"班"字
+				} else {
+					// 如果"班"字在开头，只取"班"字
+					classText = QString::fromUtf8(u8"班");
+				}
+			} else {
+				// 如果没有"班"字，使用原名称
+				classText = groupName;
+			}
+			m_lblAvatar->setText(classText);
 		}
 		m_chatDlg->InitData(m_unique_group_id, iGroupOwner);
 		UserInfo userInfo = CommonInfo::GetData();
@@ -1363,6 +1530,27 @@ public:
 			fetchSeatArrangementFromServer();
 			fetchCourseScheduleForDailyView();
 		}
+		
+		// 检查全局存储中是否已有临时房间信息（在创建班级群时保存的）
+		// 这样即使 ScheduleDialog 在创建班级群时还没有打开，也能获取到临时房间信息
+		if (!unique_group_id.isEmpty() && TempRoomStorage::hasTempRoomInfo(unique_group_id)) {
+			TempRoomInfo tempRoomInfo = TempRoomStorage::getTempRoomInfo(unique_group_id);
+			m_roomId = tempRoomInfo.room_id;
+			m_whipUrl = tempRoomInfo.whip_url;
+			m_whepUrl = tempRoomInfo.whep_url;
+			m_streamName = tempRoomInfo.stream_name;
+			
+			qDebug() << "从全局存储中读取到临时房间信息：";
+			qDebug() << "  群组ID:" << unique_group_id;
+			qDebug() << "  房间ID:" << m_roomId;
+			qDebug() << "  推流地址:" << m_whipUrl;
+			qDebug() << "  拉流地址:" << m_whepUrl;
+			qDebug() << "  流名称:" << m_streamName;
+		}
+		
+		// 注意：临时房间现在由服务器在创建班级群时自动创建
+		// 不再需要在这里调用 createTemporaryRoom()
+		// 临时房间信息会通过 WebSocket 消息（type: "3"）返回，或者从全局存储中读取
 	}
 
 	// 刷新成员列表（优先使用REST API从腾讯云IM获取最新成员列表）
@@ -1499,7 +1687,7 @@ protected:
     {
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing);
-        painter.setBrush(QColor("#5C5C5C"));
+        painter.setBrush(QColor("#282A2B"));
         painter.setPen(Qt::NoPen);
 
         QPainterPath path;
@@ -1521,6 +1709,7 @@ private:
     }
 	CustomListDialog* customListDlg = NULL;
 	QLabel* m_lblClass = NULL;
+	QLabel* m_lblAvatar = NULL; // 显示班级文字（如"五班"）
 	QString m_groupName;
 	QString m_unique_group_id;
 	TAHttpHandler* m_taHttpHandler = NULL;
@@ -1586,6 +1775,12 @@ private:
 	QMap<QString, QString> m_prepareClassCache; // 课前准备内容缓存（科目|时间 -> 内容）
 	QJsonArray m_prepareClassHistoryData; // 课前准备历史原始数据
 	
+	// 对讲房间相关
+	QString m_roomId; // 临时房间ID
+	QString m_whipUrl; // 推流地址
+	QString m_whepUrl; // 拉流地址
+	QString m_streamName; // 流名称
+	
 	// 课后评价相关
 	void showPostClassEvaluationDialog(const QString& subject); // 显示课后评价对话框
 	void sendPostClassEvaluationContent(const QString& subject, const QString& content); // 发送课后评价内容
@@ -1611,7 +1806,42 @@ private:
 	
 	// 从文件加载对讲界面HTML模板并替换数据
 	QString loadIntercomHtmlTemplate(const QString& escapedMembersJson);
+	
+	// 创建临时房间
+	void createTemporaryRoom();
+	
+	// 开始拉流（WHEP）
+	void startPullStream();
+	
+	// 停止拉流
+	void stopPullStream();
+	
+	// 拉流相关成员变量
+	QMediaPlayer* m_pullStreamPlayer = nullptr;
+	bool m_isPullingStream = false;
 };
+
+// 设置座位按钮的文本和图标：有文本时不显示图标，无文本时显示图标
+inline void ScheduleDialog::setSeatButtonTextAndIcon(QPushButton* btn, const QString& text)
+{
+	if (!btn) return;
+	
+	btn->setText(text);
+	
+	// 如果有文本，不显示图标；如果没有文本，显示图标
+	if (!text.isEmpty()) {
+		btn->setIcon(QIcon()); // 移除图标
+	} else {
+		// 如果没有文本，显示图标（仅对座位按钮）
+		if (btn->property("isSeat").toBool()) {
+			QPixmap originalPixmap("./res/img/class_ic_seat@2x.png");
+			QPixmap croppedPixmap = originalPixmap.copy(0, 0, originalPixmap.width() / 2 - 9, originalPixmap.height());
+			QIcon seatIcon(croppedPixmap);
+			btn->setIcon(seatIcon);
+			btn->setIconSize(QSize(50, 50));
+		}
+	}
+}
 
 // 实现排座方法
 inline void ScheduleDialog::arrangeSeats(const QList<StudentInfo>& students, const QString& method)
@@ -1780,15 +2010,17 @@ inline void ScheduleDialog::arrangeSeats(const QList<StudentInfo>& students, con
 	for (QPushButton* btn : seatButtons) {
 		if (studentIndex < arrangedStudents.size()) {
 			const StudentInfo& student = arrangedStudents[studentIndex];
-			btn->setText(student.name); // 显示学生姓名
 			btn->setProperty("studentId", QVariant(student.id)); // 设置学号属性
 			btn->setProperty("studentName", QVariant(student.name));
+			// 使用辅助函数设置文本和图标
+			setSeatButtonTextAndIcon(btn, student.name);
 			qDebug() << "分配座位:" << student.name << "到按钮";
 			studentIndex++;
 		} else {
-			btn->setText("");
 			btn->setProperty("studentId", QVariant(""));
 			btn->setProperty("studentName", QVariant(""));
+			// 使用辅助函数设置文本和图标（空文本会显示图标）
+			setSeatButtonTextAndIcon(btn, "");
 		}
 	}
 	
@@ -2231,9 +2463,10 @@ inline void ScheduleDialog::fillSeatTableFromData(const QList<QStringList>& data
 		for (int col = 0; col < 11; ++col) {
 			QPushButton* btn = qobject_cast<QPushButton*>(seatTable->cellWidget(row, col));
 			if (btn && btn->property("isSeat").toBool()) {
-				btn->setText("");
 				btn->setProperty("studentId", QVariant());
 				btn->setProperty("studentName", QVariant());
+				// 使用辅助函数设置文本和图标（空文本会显示图标）
+				setSeatButtonTextAndIcon(btn, "");
 			}
 		}
 	}
@@ -2305,11 +2538,12 @@ inline void ScheduleDialog::fillSeatTableFromData(const QList<QStringList>& data
 					QPushButton* btn = qobject_cast<QPushButton*>(seatTable->cellWidget(0, seatTableCol));
 					if (btn && btn->property("isSeat").toBool()) {
 						QPair<QString, QString> student = parseStudentInfo(cellText);
-						btn->setText(cellText);
 						btn->setProperty("studentName", student.first);
 						if (!student.second.isEmpty()) {
 							btn->setProperty("studentId", student.second);
 						}
+						// 使用辅助函数设置文本和图标
+						setSeatButtonTextAndIcon(btn, cellText);
 						btn->update();
 					}
 					seatIndex++;
@@ -2329,11 +2563,12 @@ inline void ScheduleDialog::fillSeatTableFromData(const QList<QStringList>& data
 					QPushButton* btn = qobject_cast<QPushButton*>(seatTable->cellWidget(seatTableRow, col));
 					if (btn && btn->property("isSeat").toBool()) {
 						QPair<QString, QString> student = parseStudentInfo(actualRowData[dataIndex]);
-						btn->setText(actualRowData[dataIndex]);
 						btn->setProperty("studentName", student.first);
 						if (!student.second.isEmpty()) {
 							btn->setProperty("studentId", student.second);
 						}
+						// 使用辅助函数设置文本和图标
+						setSeatButtonTextAndIcon(btn, actualRowData[dataIndex]);
 						btn->update();
 					}
 				}
@@ -2346,11 +2581,12 @@ inline void ScheduleDialog::fillSeatTableFromData(const QList<QStringList>& data
 					QPushButton* btn = qobject_cast<QPushButton*>(seatTable->cellWidget(seatTableRow, col));
 					if (btn && btn->property("isSeat").toBool()) {
 						QPair<QString, QString> student = parseStudentInfo(actualRowData[dataIndex]);
-						btn->setText(actualRowData[dataIndex]);
 						btn->setProperty("studentName", student.first);
 						if (!student.second.isEmpty()) {
 							btn->setProperty("studentId", student.second);
 						}
+						// 使用辅助函数设置文本和图标
+						setSeatButtonTextAndIcon(btn, actualRowData[dataIndex]);
 						btn->update();
 					}
 				}
@@ -2363,11 +2599,12 @@ inline void ScheduleDialog::fillSeatTableFromData(const QList<QStringList>& data
 					QPushButton* btn = qobject_cast<QPushButton*>(seatTable->cellWidget(seatTableRow, col));
 					if (btn && btn->property("isSeat").toBool()) {
 						QPair<QString, QString> student = parseStudentInfo(actualRowData[dataIndex]);
-						btn->setText(actualRowData[dataIndex]);
 						btn->setProperty("studentName", student.first);
 						if (!student.second.isEmpty()) {
 							btn->setProperty("studentId", student.second);
 						}
+						// 使用辅助函数设置文本和图标
+						setSeatButtonTextAndIcon(btn, actualRowData[dataIndex]);
 						btn->update();
 					}
 				}
@@ -2380,11 +2617,12 @@ inline void ScheduleDialog::fillSeatTableFromData(const QList<QStringList>& data
 					QPushButton* btn = qobject_cast<QPushButton*>(seatTable->cellWidget(seatTableRow, col));
 					if (btn && btn->property("isSeat").toBool()) {
 						QPair<QString, QString> student = parseStudentInfo(actualRowData[dataIndex]);
-						btn->setText(actualRowData[dataIndex]);
 						btn->setProperty("studentName", student.first);
 						if (!student.second.isEmpty()) {
 							btn->setProperty("studentId", student.second);
 						}
+						// 使用辅助函数设置文本和图标
+						setSeatButtonTextAndIcon(btn, actualRowData[dataIndex]);
 						btn->update();
 					}
 				}
@@ -2428,9 +2666,10 @@ inline void ScheduleDialog::fetchSeatArrangementFromServer()
 			for (int col = 0; col < 11; ++col) {
 				QPushButton* btn = qobject_cast<QPushButton*>(seatTable->cellWidget(row, col));
 				if (btn && btn->property("isSeat").toBool()) {
-					btn->setText("");
 					btn->setProperty("studentId", QVariant());
 					btn->setProperty("studentName", QVariant());
+					// 使用辅助函数设置文本和图标（空文本会显示图标）
+					setSeatButtonTextAndIcon(btn, "");
 				}
 			}
 		}
@@ -2480,9 +2719,10 @@ inline void ScheduleDialog::fetchSeatArrangementFromServer()
 					}
 				}
 				
-				btn->setText(seatLabel);
 				btn->setProperty("studentName", name.isEmpty() ? seatLabel : name);
 				btn->setProperty("studentId", studentId);
+				// 使用辅助函数设置文本和图标
+				setSeatButtonTextAndIcon(btn, seatLabel);
 				btn->update();
 				filled++;
 			}
@@ -2636,8 +2876,8 @@ inline void ScheduleDialog::ensureDailyScheduleButtons(int count)
 		return;
 	}
 
-	auto createButton = [](const QString& style) -> QPushButton* {
-		QPushButton* btn = new QPushButton("");
+	auto createButton = [this](const QString& style) -> QPushButton* {
+		QPushButton* btn = new QPushButton("", this);
 		btn->setStyleSheet(style);
 		return btn;
 	};
@@ -2708,11 +2948,46 @@ inline void ScheduleDialog::applyDailyScheduleToButtons(const QStringList& times
 		}
 	}
 
-	// 按时间字符串排序（格式如 "07:20", "08:00", "12:00" 等）
-	// 将时间字符串转换为分钟数进行比较，确保正确排序
-	auto timeToMinutes = [](const QString& timeStr) -> int {
+	// 从时间字符串中提取时间用于排序的辅助函数（内联定义，供timeToMinutes使用）
+	auto extractTimeForSorting = [](const QString& timeText) -> QString {
+		if (timeText.isEmpty()) return "";
+		
+		// 先统一将全角冒号转换为半角冒号
+		QString normalizedText = timeText;
+		normalizedText.replace(QStringLiteral("："), QStringLiteral(":"));
+		
+		// 匹配时间范围格式：如 "7:00-7:40" 或 "早读 7:00-7:40" 或 "午休 11:10-13:30"
+		QRegExp timeRangePattern("(\\d{1,2})\\s*:\\s*(\\d{2})\\s*-\\s*(\\d{1,2})\\s*:\\s*(\\d{2})");
+		if (timeRangePattern.indexIn(normalizedText) != -1) {
+			QString hour = timeRangePattern.cap(1);  // 提取开始时间的小时部分，如"11"
+			QString min = timeRangePattern.cap(2);   // 提取开始时间的分钟部分，如"10"
+			// 返回开始时间用于排序，格式化为 HH:MM（如"11:10"），确保排序正确
+			return QString("%1:%2").arg(hour.toInt(), 2, 10, QChar('0')).arg(min);
+		}
+		
+		// 匹配单个时间格式：如 "7:00" 或 "早读 7:00"
+		QRegExp singleTimePattern("(\\d{1,2})\\s*:\\s*(\\d{2})");
+		if (singleTimePattern.indexIn(normalizedText) != -1) {
+			QString hour = singleTimePattern.cap(1);
+			QString min = singleTimePattern.cap(2);
+			// 格式化为 HH:MM
+			return QString("%1:%2").arg(hour.toInt(), 2, 10, QChar('0')).arg(min);
+		}
+		
+		return "";
+	};
+
+	// 按时间字符串排序（格式如 "07:20", "08:00", "12:00" 或 "午休 11：10-13：30" 等）
+	// 先将时间字符串提取出时间部分，再转换为分钟数进行比较，确保正确排序
+	auto timeToMinutes = [&extractTimeForSorting](const QString& timeStr) -> int {
 		if (timeStr.isEmpty()) return 9999; // 空时间排在最后
-		QStringList parts = timeStr.split(':');
+		
+		// 先从时间字符串中提取时间（如从"午休 11：10-13：30"中提取"11:10"）
+		QString extractedTime = extractTimeForSorting(timeStr);
+		if (extractedTime.isEmpty()) return 9999; // 无法提取时间，排在最后
+		
+		// 将提取的时间转换为分钟数
+		QStringList parts = extractedTime.split(':');
 		if (parts.size() < 2) return 9999;
 		bool ok1, ok2;
 		int hours = parts[0].toInt(&ok1);
@@ -2828,22 +3103,66 @@ inline void ScheduleDialog::applyDailyScheduleToButtons(const QStringList& times
 	}
 }
 
+// 从时间字符串中提取时间用于排序（如"早读 7:00-7:40"提取"7:00"）
+inline QString extractTimeForSorting(const QString& timeText) {
+	if (timeText.isEmpty()) return "";
+	
+	// 先统一将全角冒号转换为半角冒号
+	QString normalizedText = timeText;
+	normalizedText.replace(QStringLiteral("："), QStringLiteral(":"));
+	
+	// 匹配时间范围格式：如 "7:00-7:40" 或 "早读 7:00-7:40" 或 "早读 早读 7:00-7:40"
+	// 提取开始时间（第一个时间）用于排序，如从"早读 7:00-7:40"中提取"7:00"
+	QRegExp timeRangePattern("(\\d{1,2})\\s*:\\s*(\\d{2})\\s*-\\s*(\\d{1,2})\\s*:\\s*(\\d{2})");
+	if (timeRangePattern.indexIn(normalizedText) != -1) {
+		QString hour = timeRangePattern.cap(1);  // 提取开始时间的小时部分，如"7"
+		QString min = timeRangePattern.cap(2);   // 提取开始时间的分钟部分，如"00"
+		// 返回开始时间用于排序，格式化为 HH:MM（如"07:00"），确保排序正确
+		return QString("%1:%2").arg(hour.toInt(), 2, 10, QChar('0')).arg(min);
+	}
+	
+	// 匹配单个时间格式：如 "7:00" 或 "早读 7:00"
+	QRegExp singleTimePattern("(\\d{1,2})\\s*:\\s*(\\d{2})");
+	if (singleTimePattern.indexIn(normalizedText) != -1) {
+		QString hour = singleTimePattern.cap(1);
+		QString min = singleTimePattern.cap(2);
+		// 格式化为 HH:MM
+		return QString("%1:%2").arg(hour.toInt(), 2, 10, QChar('0')).arg(min);
+	}
+	
+	return "";
+}
+
 inline QMap<QString, QString> ScheduleDialog::extractHighlightTimes(const QStringList& times, const QStringList& subjects) const
 {
-	QMap<QString, QString> result;
-	result.insert(QStringLiteral("晨读"), QStringLiteral("07:20"));
-	result.insert(QStringLiteral("午饭"), QStringLiteral("12:00"));
-	result.insert(QStringLiteral("午休"), QStringLiteral("12:40"));
-	result.insert(QStringLiteral("晚自习"), QStringLiteral("19:00"));
+	// 移除硬编码的默认值，以服务器下发的为准
+	QStringList specialSubjects = { QStringLiteral("晨读"), QStringLiteral("午饭"), QStringLiteral("午休"), QStringLiteral("晚自习") };
 
+	// 先收集所有数据到列表中
+	QList<QPair<QString, QString>> items;
 	int count = qMin(times.size(), subjects.size());
 	for (int i = 0; i < count; ++i) {
 		const QString subject = subjects[i];
 		const QString time = times[i];
-		if (result.contains(subject) && !time.isEmpty()) {
-			result[subject] = time;
+		// 只提取服务器下发的特殊科目时间，不设置默认值
+		if (specialSubjects.contains(subject) && !time.isEmpty()) {
+			items.append(qMakePair(subject, time));
 		}
 	}
+	
+	// 按照提取的时间进行排序
+	std::sort(items.begin(), items.end(), [](const QPair<QString, QString>& a, const QPair<QString, QString>& b) {
+		QString timeA = extractTimeForSorting(a.second);
+		QString timeB = extractTimeForSorting(b.second);
+		return timeA < timeB;
+	});
+	
+	// 转换为QMap返回（虽然QMap会按键排序，但我们已经按时间排序了，调用方会使用排序后的列表）
+	QMap<QString, QString> result;
+	for (const auto& item : items) {
+		result[item.first] = item.second;
+	}
+	
 	return result;
 }
 
@@ -2865,28 +3184,29 @@ inline void ScheduleDialog::updateSpecialSubjects(const QMap<QString, QString>& 
 		return;
 	}
 
-	QStringList order = { QStringLiteral("晨读"), QStringLiteral("午饭"), QStringLiteral("午休"), QStringLiteral("晚自习") };
-	QStringList keys;
-	for (const QString& key : order) {
-		if (highlights.contains(key)) {
-			keys.append(key);
-		}
-	}
+	// 按照时间排序显示，而不是使用固定顺序
+	QList<QPair<QString, QString>> sortedItems;
 	for (auto it = highlights.constBegin(); it != highlights.constEnd(); ++it) {
-		if (!keys.contains(it.key())) {
-			keys.append(it.key());
-		}
+		sortedItems.append(qMakePair(it.key(), it.value()));
 	}
+	
+	// 按照提取的时间进行排序
+	std::sort(sortedItems.begin(), sortedItems.end(), [](const QPair<QString, QString>& a, const QPair<QString, QString>& b) {
+		QString timeA = extractTimeForSorting(a.second);
+		QString timeB = extractTimeForSorting(b.second);
+		return timeA < timeB;
+	});
 
 	bool first = true;
-	for (const QString& subject : keys) {
+	for (const auto& item : sortedItems) {
+		const QString& subject = item.first;
 		if (!first) {
-			QLabel* sep = new QLabel("   |   ");
+			QLabel* sep = new QLabel("   |   ", this);
 			sep->setStyleSheet("color: white; font-size: 12px;");
 			m_specialSubjectRowLayout->addWidget(sep);
 		}
 		QString display = QStringLiteral("%1 %2").arg(subject, highlights.value(subject));
-		QLabel* lbl = new QLabel(display);
+		QLabel* lbl = new QLabel(display, this);
 		lbl->setStyleSheet("color: white; font-size: 12px;");
 		m_specialSubjectRowLayout->addWidget(lbl);
 		first = false;
@@ -2911,28 +3231,19 @@ inline QStringList ScheduleDialog::defaultSubjectsForWeekday(int weekday) const
 inline QStringList ScheduleDialog::defaultTimesForSubjects(const QStringList& subjects) const
 {
 	QStringList slotDefaults = { "07:20","08:00","08:45","09:35","10:25","12:00","12:40","14:00","14:45","15:35","17:00","19:00","20:30" };
-	QString morningRead = "07:20";
-	QString lunchTime = "12:00";
-	QString napTime = "12:40";
-	QString tutoringTime = "17:00";
-	QString eveningStudyTime = "19:00";
+	// 移除硬编码的特殊科目时间，以服务器下发的为准
+	QString tutoringTime = "17:00"; // 课服时间保留，因为不在移除列表中
 
 	QStringList times;
 	times.reserve(subjects.size());
 	for (int i = 0; i < subjects.size(); ++i) {
 		QString subject = subjects[i];
 		QString slotTime = slotDefaults.value(i, "--:--");
-		if (subject == "晨读") {
-			slotTime = morningRead;
-		} else if (subject == "午饭") {
-			slotTime = lunchTime;
-		} else if (subject == "午休") {
-			slotTime = napTime;
-		} else if (subject == "课服") {
+		// 移除晨读、午饭、午休、晚自习的硬编码时间设置
+		if (subject == "课服") {
 			slotTime = tutoringTime;
-		} else if (subject == "晚自习") {
-			slotTime = eveningStudyTime;
 		}
+		// 其他科目使用默认时间，特殊科目（晨读、午饭、午休、晚自习）也使用默认时间，由服务器数据覆盖
 		times.append(slotTime);
 	}
 	return times;
@@ -3190,8 +3501,28 @@ inline void ScheduleDialog::openIntercomWebPage()
 	};
 	// 添加班级群的唯一编号
 	dataObj["group_id"] = m_unique_group_id;
+	// 添加临时房间信息（如果已创建）
+	if (!m_roomId.isEmpty()) {
+		QJsonObject tempRoomObj;
+		tempRoomObj["room_id"] = m_roomId;
+		if (!m_whipUrl.isEmpty()) {
+			tempRoomObj["whip_url"] = m_whipUrl;
+		}
+		if (!m_whepUrl.isEmpty()) {
+			tempRoomObj["whep_url"] = m_whepUrl;
+		}
+		if (!m_streamName.isEmpty()) {
+			tempRoomObj["stream_name"] = m_streamName;
+		}
+		tempRoomObj["group_id"] = m_unique_group_id;
+		tempRoomObj["owner_id"] = currentUserId;
+		tempRoomObj["owner_name"] = currentUserName;
+		tempRoomObj["owner_icon"] = currentUserIcon;
+		dataObj["temp_room"] = tempRoomObj;
+	}
 	
 	qDebug() << "班级群唯一编号 (m_unique_group_id):" << m_unique_group_id;
+	qDebug() << "房间ID (m_roomId):" << m_roomId;
 	if (m_unique_group_id.isEmpty()) {
 		qWarning() << "警告：班级群唯一编号为空！";
 	}
@@ -3276,6 +3607,13 @@ inline void ScheduleDialog::openIntercomWebPage()
 	
 	if (opened) {
 		qDebug() << "成功使用QDesktopServices打开HTML文件";
+		// 页面打开成功后，如果已有拉流地址，开始拉流（注释：拉流在HTML页面上进行）
+		//QTimer::singleShot(1000, this, [this]() {
+		//	if (!m_whepUrl.isEmpty() && !m_isPullingStream) {
+		//		qDebug() << "页面已打开，开始拉流，拉流地址:" << m_whepUrl;
+		//		startPullStream();
+		//	}
+		//});
 		return;
 	}
 	
@@ -3286,6 +3624,13 @@ inline void ScheduleDialog::openIntercomWebPage()
 		qDebug() << "尝试使用explorer打开文件:" << nativePath;
 		if (QProcess::startDetached("explorer", QStringList() << nativePath)) {
 			qDebug() << "成功使用explorer打开HTML文件";
+			// 页面打开成功后，如果已有拉流地址，开始拉流（注释：拉流在HTML页面上进行）
+			//QTimer::singleShot(1000, this, [this]() {
+			//	if (!m_whepUrl.isEmpty() && !m_isPullingStream) {
+			//		qDebug() << "页面已打开，开始拉流，拉流地址:" << m_whepUrl;
+			//		startPullStream();
+			//	}
+			//});
 			return;
 		}
 		
@@ -3300,6 +3645,13 @@ inline void ScheduleDialog::openIntercomWebPage()
 		qDebug() << "完整命令: cmd /c start \"\" \"" << nativePath << "\"";
 		if (QProcess::startDetached("cmd", cmdArgs)) {
 			qDebug() << "成功使用cmd start命令打开HTML文件";
+			// 页面打开成功后，如果已有拉流地址，开始拉流（注释：拉流在HTML页面上进行）
+			//QTimer::singleShot(1000, this, [this]() {
+			//	if (!m_whepUrl.isEmpty() && !m_isPullingStream) {
+			//		qDebug() << "页面已打开，开始拉流，拉流地址:" << m_whepUrl;
+			//		startPullStream();
+			//	}
+			//});
 			return;
 		}
 		
@@ -3310,6 +3662,13 @@ inline void ScheduleDialog::openIntercomWebPage()
 		rundllArgs << "shell32.dll,ShellExec_RunDLL" << nativePath;
 		if (QProcess::startDetached("rundll32.exe", rundllArgs)) {
 			qDebug() << "成功使用rundll32打开HTML文件";
+			// 页面打开成功后，如果已有拉流地址，开始拉流（注释：拉流在HTML页面上进行）
+			//QTimer::singleShot(1000, this, [this]() {
+			//	if (!m_whepUrl.isEmpty() && !m_isPullingStream) {
+			//		qDebug() << "页面已打开，开始拉流，拉流地址:" << m_whepUrl;
+			//		startPullStream();
+			//	}
+			//});
 			return;
 		}
 	#endif
@@ -3376,6 +3735,129 @@ inline void ScheduleDialog::openIntercomWebPage()
 	return html;
 }
 
+// 创建临时房间
+inline void ScheduleDialog::createTemporaryRoom()
+{
+	if (m_unique_group_id.isEmpty()) {
+		qWarning() << "警告：班级群唯一编号为空，无法创建临时房间！";
+		return;
+	}
+	
+	if (!m_pWs) {
+		qWarning() << "警告：WebSocket未连接，无法创建临时房间！";
+		return;
+	}
+	
+	// 生成房间ID（使用时间戳）
+	m_roomId = QString("room_%1").arg(QDateTime::currentMSecsSinceEpoch());
+	qDebug() << "生成房间ID:" << m_roomId;
+	
+	// 生成stream_url：使用班级群唯一编号作为stream参数
+	// 格式：https://47.100.126.194/rtc/v1/whep/?app=live&stream=<班级群的唯一编号>
+	QString streamUrl = QString("https://47.100.126.194/rtc/v1/whep/?app=live&stream=%1").arg(m_unique_group_id);
+	qDebug() << "生成stream_url:" << streamUrl;
+	
+	// 获取当前用户信息
+	UserInfo userInfo = CommonInfo::GetData();
+	QString ownerName = m_userName.isEmpty() ? userInfo.strName : m_userName;
+	if (ownerName.isEmpty()) {
+		ownerName = "用户";
+	}
+	
+	// 构建创建房间的消息
+	QJsonObject createRoomMessage;
+	createRoomMessage["type"] = "6";
+	createRoomMessage["invited_users"] = QJsonArray();  // 初始为空数组
+	createRoomMessage["stream_url"] = streamUrl;
+	createRoomMessage["owner_name"] = ownerName;
+	createRoomMessage["group_id"] = m_unique_group_id;  // 班级群的唯一编号
+	
+	QJsonDocument doc(createRoomMessage);
+	QString jsonString = QString::fromUtf8(doc.toJson(QJsonDocument::Compact));
+	
+	qDebug() << "准备发送创建房间消息:";
+	qDebug() << "完整消息对象:" << jsonString;
+	qDebug() << "group_id字段值:" << m_unique_group_id;
+	
+	// 通过WebSocket发送消息（直接发送JSON格式，不通过群组）
+	// 注意：这里直接发送JSON，服务器应该能够处理
+	TaQTWebSocket::sendPrivateMessage(jsonString);
+	
+	qDebug() << "创建房间消息已发送，房间ID:" << m_roomId;
+	qDebug() << "发送的消息字符串:" << jsonString;
+}
+
+// 开始拉流（WHEP）- 注释：拉流在HTML页面上进行，不在C++代码中
+/*
+inline void ScheduleDialog::startPullStream()
+{
+	if (m_whepUrl.isEmpty()) {
+		qWarning() << "拉流地址为空，无法开始拉流";
+		return;
+	}
+	
+	if (m_isPullingStream) {
+		qDebug() << "已经在拉流中，无需重复开始";
+		return;
+	}
+	
+	qDebug() << "开始拉流，拉流地址:" << m_whepUrl;
+	
+	// 创建媒体播放器
+	if (!m_pullStreamPlayer) {
+		m_pullStreamPlayer = new QMediaPlayer(this);
+		QAudioOutput* audioOutput = new QAudioOutput(this);
+		m_pullStreamPlayer->setAudioOutput(audioOutput);
+		
+		// 连接信号
+		connect(m_pullStreamPlayer, &QMediaPlayer::mediaStatusChanged, this, [this](QMediaPlayer::MediaStatus status) {
+			if (status == QMediaPlayer::LoadedMedia) {
+				qDebug() << "拉流媒体已加载";
+			} else if (status == QMediaPlayer::BufferingMedia) {
+				qDebug() << "拉流正在缓冲";
+			} else if (status == QMediaPlayer::BufferedMedia) {
+				qDebug() << "拉流缓冲完成";
+			} else if (status == QMediaPlayer::EndOfMedia) {
+				qDebug() << "拉流播放结束";
+			}
+		});
+		
+		connect(m_pullStreamPlayer, &QMediaPlayer::errorOccurred, this, [this](QMediaPlayer::Error error, const QString& errorString) {
+			qWarning() << "拉流播放错误:" << error << errorString;
+			// 如果播放失败，尝试使用其他方法
+			if (error == QMediaPlayer::ResourceError || error == QMediaPlayer::FormatError) {
+				qWarning() << "QMediaPlayer不支持WHEP协议，可能需要使用WebRTC或其他方法";
+			}
+		});
+	}
+	
+	// 设置媒体源并播放
+	QUrl mediaUrl(m_whepUrl);
+	m_pullStreamPlayer->setSource(mediaUrl);
+	m_pullStreamPlayer->play();
+	
+	m_isPullingStream = true;
+	qDebug() << "拉流已开始";
+}
+
+// 停止拉流
+inline void ScheduleDialog::stopPullStream()
+{
+	if (!m_isPullingStream) {
+		return;
+	}
+	
+	qDebug() << "停止拉流";
+	
+	if (m_pullStreamPlayer) {
+		m_pullStreamPlayer->stop();
+	}
+	
+	m_isPullingStream = false;
+	qDebug() << "拉流已停止";
+}
+*/
+
 
 // 热力图相关方法的实现在 ScheduleDialog_Heatmap.cpp 中
 
@@ -3437,7 +3919,7 @@ inline void ScheduleDialog::showPrepareClassDialog(const QString& subject, const
 	mainLayout->setContentsMargins(20, 20, 20, 20);
 	
 	// 提示文字
-	QLabel* lblPrompt = new QLabel(QString::fromUtf8(u8"请输入课前准备内容"));
+	QLabel* lblPrompt = new QLabel(QString::fromUtf8(u8"请输入课前准备内容"), dlg);
 	lblPrompt->setStyleSheet("color: white; font-size: 14px;");
 	mainLayout->addWidget(lblPrompt);
 	
@@ -3452,17 +3934,17 @@ inline void ScheduleDialog::showPrepareClassDialog(const QString& subject, const
 	mainLayout->addWidget(textEdit, 1);
 	
 	// 按钮布局
-	QHBoxLayout* btnLayout = new QHBoxLayout;
+	QHBoxLayout* btnLayout = new QHBoxLayout(dlg);
 	btnLayout->addStretch();
 	
-	QPushButton* btnCancel = new QPushButton(QString::fromUtf8(u8"取消"));
+	QPushButton* btnCancel = new QPushButton(QString::fromUtf8(u8"取消"), dlg);
 	btnCancel->setFixedSize(80, 35);
 	btnCancel->setStyleSheet(
 		"QPushButton { background-color: #4a4a4a; color: white; }"
 		"QPushButton:hover { background-color: #5a5a5a; }"
 	);
 	
-	QPushButton* btnConfirm = new QPushButton(QString::fromUtf8(u8"确定"));
+	QPushButton* btnConfirm = new QPushButton(QString::fromUtf8(u8"确定"), dlg);
 	btnConfirm->setFixedSize(80, 35);
 	btnConfirm->setStyleSheet(
 		"QPushButton { background-color: #0078d4; color: white; }"
@@ -3581,7 +4063,7 @@ inline void ScheduleDialog::showPostClassEvaluationDialog(const QString& subject
 	mainLayout->setContentsMargins(20, 20, 20, 20);
 	
 	// 提示文字
-	QLabel* lblPrompt = new QLabel(QString::fromUtf8(u8"请输入课后评价内容"));
+	QLabel* lblPrompt = new QLabel(QString::fromUtf8(u8"请输入课后评价内容"), dlg);
 	lblPrompt->setStyleSheet("color: white; font-size: 14px;");
 	mainLayout->addWidget(lblPrompt);
 	
@@ -3592,17 +4074,17 @@ inline void ScheduleDialog::showPostClassEvaluationDialog(const QString& subject
 	mainLayout->addWidget(textEdit, 1);
 	
 	// 按钮布局
-	QHBoxLayout* btnLayout = new QHBoxLayout;
+	QHBoxLayout* btnLayout = new QHBoxLayout(dlg);
 	btnLayout->addStretch();
 	
-	QPushButton* btnCancel = new QPushButton(QString::fromUtf8(u8"取消"));
+	QPushButton* btnCancel = new QPushButton(QString::fromUtf8(u8"取消"), dlg);
 	btnCancel->setFixedSize(80, 35);
 	btnCancel->setStyleSheet(
 		"QPushButton { background-color: #4a4a4a; color: white; }"
 		"QPushButton:hover { background-color: #5a5a5a; }"
 	);
 	
-	QPushButton* btnConfirm = new QPushButton(QString::fromUtf8(u8"确定"));
+	QPushButton* btnConfirm = new QPushButton(QString::fromUtf8(u8"确定"), dlg);
 	btnConfirm->setFixedSize(80, 35);
 	btnConfirm->setStyleSheet(
 		"QPushButton { background-color: #0078d4; color: white; }"
@@ -3665,3 +4147,4 @@ inline void ScheduleDialog::sendPostClassEvaluationContent(const QString& subjec
 	
 	QMessageBox::information(this, QString::fromUtf8(u8"成功"), QString::fromUtf8(u8"课后评价内容已发送到群组！"));
 }
+

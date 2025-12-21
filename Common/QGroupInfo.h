@@ -27,6 +27,8 @@ class MemberKickDialog; // 前向声明
 #include <QResizeEvent>
 #include <QEvent>
 #include <QIcon>
+#include <QPainter>
+#include <QPropertyAnimation>
 #include "CommonInfo.h"
 #include "CourseDialog.h"
 #include "ImSDK/includes/TIMCloud.h"
@@ -38,6 +40,55 @@ class MemberKickDialog; // 前向声明
 class ClassTeacherDialog;
 class ClassTeacherDelDialog;
 class FriendSelectDialog;
+
+// 自定义Toggle Switch控件（自绘）
+class ToggleSwitch : public QWidget {
+    Q_OBJECT
+    Q_PROPERTY(bool checked READ isChecked WRITE setChecked NOTIFY toggled)
+public:
+    explicit ToggleSwitch(QWidget* parent = nullptr);
+    bool isChecked() const { return m_checked; }
+    void setChecked(bool checked);
+
+signals:
+    void toggled(bool checked);
+
+protected:
+    void paintEvent(QPaintEvent* event) override;
+    void mousePressEvent(QMouseEvent* event) override;
+    void resizeEvent(QResizeEvent* event) override;
+
+private:
+    bool m_checked;
+    QColor m_onColor;
+    QColor m_offColor;
+    QColor m_thumbColor;
+    int m_thumbRadius;
+    int m_trackHeight;
+    QPoint m_thumbPosition;
+    void updateThumbPosition();
+};
+
+// 自定义设置行控件（蓝色标签 + Toggle Switch）
+class SettingRow : public QWidget {
+    Q_OBJECT
+public:
+    explicit SettingRow(const QString& labelText, QWidget* parent = nullptr);
+    bool isChecked() const { return m_toggle->isChecked(); }
+    void setChecked(bool checked) { m_toggle->setChecked(checked); }
+    void setHighlighted(bool highlighted); // 设置是否显示红色边框
+
+signals:
+    void toggled(bool checked);
+
+private:
+    QLabel* m_label;
+    ToggleSwitch* m_toggle;
+    bool m_highlighted;
+    
+protected:
+    void paintEvent(QPaintEvent* event) override;
+};
 class FriendButton : public QPushButton {
     Q_OBJECT
 public:

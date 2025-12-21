@@ -3,6 +3,8 @@
 #include "ClassTeacherDialog.h"
 #include "FriendSelectDialog.h"
 #include "MemberKickDialog.h"
+#include <QPainterPath>
+#include <QPropertyAnimation>
 
 // 解散群聊回调数据结构
 struct DismissGroupCallbackData {
@@ -11,6 +13,130 @@ struct DismissGroupCallbackData {
     QString userId;
     QString userName;
 };
+
+// ToggleSwitch 实现
+ToggleSwitch::ToggleSwitch(QWidget* parent)
+    : QWidget(parent)
+    , m_checked(false)
+    , m_onColor(QColor(76, 175, 80))  // 绿色（开启时）
+    , m_offColor(QColor(158, 158, 158))  // 灰色（关闭时）
+    , m_thumbColor(QColor(255, 255, 255))  // 白色滑块
+    , m_thumbRadius(10)
+    , m_trackHeight(20)
+{
+    setFixedSize(50, 24);  // 设置固定大小
+    updateThumbPosition();
+}
+
+void ToggleSwitch::setChecked(bool checked)
+{
+    if (m_checked != checked) {
+        m_checked = checked;
+        updateThumbPosition();
+        update();
+        emit toggled(checked);
+    }
+}
+
+void ToggleSwitch::updateThumbPosition()
+{
+    int trackWidth = width() - 4;  // 减去左右边距
+    int maxX = trackWidth - m_thumbRadius * 2;
+    if (m_checked) {
+        m_thumbPosition = QPoint(maxX + 2, 2);  // 右边（开启）
+    } else {
+        m_thumbPosition = QPoint(2, 2);  // 左边（关闭）
+    }
+}
+
+void ToggleSwitch::paintEvent(QPaintEvent* event)
+{
+    Q_UNUSED(event);
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing);
+    
+    // 绘制轨道（背景）
+    QRect trackRect(2, (height() - m_trackHeight) / 2, width() - 4, m_trackHeight);
+    QColor trackColor = m_checked ? m_onColor : m_offColor;
+    painter.setBrush(trackColor);
+    painter.setPen(Qt::NoPen);
+    painter.drawRoundedRect(trackRect, m_trackHeight / 2, m_trackHeight / 2);
+    
+    // 绘制滑块
+    QRect thumbRect(m_thumbPosition.x(), m_thumbPosition.y(), m_thumbRadius * 2, m_thumbRadius * 2);
+    painter.setBrush(m_thumbColor);
+    painter.setPen(Qt::NoPen);
+    painter.drawEllipse(thumbRect);
+}
+
+void ToggleSwitch::mousePressEvent(QMouseEvent* event)
+{
+    if (event->button() == Qt::LeftButton) {
+        setChecked(!m_checked);
+    }
+    QWidget::mousePressEvent(event);
+}
+
+void ToggleSwitch::resizeEvent(QResizeEvent* event)
+{
+    QWidget::resizeEvent(event);
+    updateThumbPosition();
+}
+
+// SettingRow 实现
+SettingRow::SettingRow(const QString& labelText, QWidget* parent)
+    : QWidget(parent)
+    , m_highlighted(false)
+{
+    setFixedHeight(40);
+    
+    QHBoxLayout* layout = new QHBoxLayout(this);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
+    
+    // 蓝色标签区域
+    m_label = new QLabel(labelText, this);
+    m_label->setAlignment(Qt::AlignCenter);
+    m_label->setStyleSheet("background-color: #4169E1; color: white; font-size: 14px; font-weight: bold; padding: 8px;");
+    m_label->setFixedWidth(120);  // 固定宽度
+    
+    // 白色区域（包含Toggle Switch）
+    QWidget* toggleContainer = new QWidget(this);
+    toggleContainer->setStyleSheet("background-color: white;");
+    QHBoxLayout* toggleLayout = new QHBoxLayout(toggleContainer);
+    toggleLayout->setContentsMargins(10, 0, 10, 0);
+    toggleLayout->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    
+    m_toggle = new ToggleSwitch(toggleContainer);
+    toggleLayout->addWidget(m_toggle);
+    
+    layout->addWidget(m_label);
+    layout->addWidget(toggleContainer, 1);  // 白色区域占据剩余空间
+    
+    connect(m_toggle, &ToggleSwitch::toggled, this, &SettingRow::toggled);
+}
+
+void SettingRow::setHighlighted(bool highlighted)
+{
+    if (m_highlighted != highlighted) {
+        m_highlighted = highlighted;
+        update();
+    }
+}
+
+void SettingRow::paintEvent(QPaintEvent* event)
+{
+    QWidget::paintEvent(event);
+    
+    // 如果高亮，绘制红色边框
+    if (m_highlighted) {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setPen(QPen(QColor(255, 0, 0), 2));  // 红色边框，2像素宽
+        painter.setBrush(Qt::NoBrush);
+        painter.drawRect(rect().adjusted(1, 1, -1, -1));
+    }
+}
 
 QGroupInfo::QGroupInfo(QWidget* parent)
 	: QDialog(parent)
@@ -98,61 +224,64 @@ void QGroupInfo::initData(QString groupName, QString groupNumberId, QString clas
     //m_courseDlg->setCourse(3, 4, "体育", true);
 
     // 顶部用户信息
-    QHBoxLayout* topLayout = new QHBoxLayout;
-    //QLabel* lblNumber = new QLabel("①");
-    //lblNumber->setAlignment(Qt::AlignCenter);
-    //lblNumber->setFixedSize(30, 30);
-    //lblNumber->setStyleSheet("background-color: yellow; border-radius: 15px; font-weight: bold;");
+    QHBoxLayout* topLayout = new QHBoxLayout(this);
     QLabel* lblAvatar = new QLabel(this);
     lblAvatar->setFixedSize(50, 50);
-    lblAvatar->setStyleSheet("background-color: lightgray;");
-    QLabel* lblInfo = new QLabel(groupName + "\n" + groupNumberId, this);
-    QPushButton* btnMore = new QPushButton("...", this);
+    lblAvatar->setStyleSheet("background-color: lightgray; border-radius: 25px;");
+    
+    // 用户信息：名称和ID
+    QVBoxLayout* infoLayout = new QVBoxLayout(this);
+    QLabel* lblName = new QLabel(groupName, this);
+    lblName->setStyleSheet("color: white; font-size: 14px;");
+    
+    // ID显示（带锁图标）
+    QHBoxLayout* idLayout = new QHBoxLayout(this);
+    QLabel* lblLock = new QLabel("🔒", this);
+    lblLock->setFixedSize(16, 16);
+    QLabel* lblId = new QLabel(groupNumberId, this);
+    lblId->setStyleSheet("color: white; font-size: 12px;");
+    idLayout->addWidget(lblLock);
+    idLayout->addWidget(lblId);
+    idLayout->addStretch();
+    
+    infoLayout->addWidget(lblName);
+    infoLayout->addLayout(idLayout);
+    infoLayout->setSpacing(2);
+    infoLayout->setContentsMargins(0, 0, 0, 0);
+    
+    QPushButton* btnMore = new QPushButton("☰", this);
     btnMore->setFixedSize(30, 30);
-    //topLayout->addWidget(lblNumber);
+    btnMore->setStyleSheet("background-color: transparent; color: white; font-size: 16px;");
+    
     topLayout->addWidget(lblAvatar);
-    topLayout->addWidget(lblInfo, 1);
+    topLayout->addLayout(infoLayout, 1);
     topLayout->addStretch();
     topLayout->addWidget(btnMore);
     mainLayout->addLayout(topLayout);
 
-    // 班级编号
+    // 班级编号（蓝色按钮 + 输入框）
+    QPushButton* btnClassNum = new QPushButton("班级编号", this);
+    btnClassNum->setStyleSheet("background-color: #4169E1; color: white; padding: 4px 8px; font-weight: bold;");
+    mainLayout->addWidget(btnClassNum);
+    
     QLineEdit* editClassNum = new QLineEdit("2349235", this);
     editClassNum->setAlignment(Qt::AlignCenter);
-    editClassNum->setStyleSheet("color:red; font-size:18px; font-weight:bold;");
+    editClassNum->setStyleSheet("color: red; font-size: 18px; font-weight: bold; background-color: white; border: 1px solid #ccc; padding: 4px;");
     mainLayout->addWidget(editClassNum);
-
-    QHBoxLayout* pHBoxLayut = new QHBoxLayout;
-    // 班级课程表按钮
-    QPushButton* btnSchedule = new QPushButton("班级课程表", this);
-    btnSchedule->setStyleSheet("background-color:green; color:white; font-weight:bold;");
-
-    pHBoxLayut->addWidget(btnSchedule);
-    pHBoxLayut->addStretch(2);
-    mainLayout->addLayout(pHBoxLayut);
-
-    connect(btnSchedule, &QPushButton::clicked, this, [=]() {
-        qDebug() << "红框区域被点击！";
-        if (m_courseDlg)
-        {
-            m_courseDlg->show();
-        }
-
-        // 这里可以弹出输入框、打开聊天功能等
-        /*if (m_chatDlg)
-        {
-            m_chatDlg->show();
-        }*/
-    });
     
 
-    // 好友列表
-    QGroupBox* groupFriends = new QGroupBox("好友列表", this);
+    // 好友列表（蓝色按钮 + 圆形图标网格）
+    QPushButton* btnFriends = new QPushButton("好友列表", this);
+    btnFriends->setStyleSheet("background-color: #4169E1; color: white; padding: 4px 8px; font-weight: bold;");
+    mainLayout->addWidget(btnFriends);
+    
+    QGroupBox* groupFriends = new QGroupBox(this);
+    groupFriends->setTitle(""); // 移除标题
     groupFriends->setMinimumHeight(80); // 设置最小高度，确保有足够空间显示按钮
     QVBoxLayout* friendsLayout = new QVBoxLayout(groupFriends);
     friendsLayout->setContentsMargins(10, 10, 10, 10); // 设置 friendsLayout 的边距
     friendsLayout->setSpacing(5); // 设置 friendsLayout 的间距
-    circlesLayout = new QHBoxLayout();
+    circlesLayout = new QHBoxLayout(this);
     // 设置布局的间距和边距
     circlesLayout->setSpacing(8);
     circlesLayout->setContentsMargins(5, 5, 5, 5);
@@ -254,25 +383,40 @@ void QGroupInfo::initData(QString groupName, QString groupNumberId, QString clas
     friendsLayout->addLayout(circlesLayout);
     mainLayout->addWidget(groupFriends);
 
-    // 科目输入
-    QGroupBox* groupSubject = new QGroupBox("科目", this);
-    QVBoxLayout* subjectLayout = new QVBoxLayout(groupSubject);
-    QLineEdit* editSubject = new QLineEdit("语文", this);
-    editSubject->setAlignment(Qt::AlignCenter);
-    editSubject->setStyleSheet("color:red; font-size:18px; font-weight:bold;");
-    subjectLayout->addWidget(editSubject);
-    mainLayout->addWidget(groupSubject);
+    // 设置开关区域（使用自定义控件）
+    QFrame* settingsFrame = new QFrame(this);
+    settingsFrame->setStyleSheet("padding: 10px; background-color: #5C5C5C;");
+    QVBoxLayout* settingsLayout = new QVBoxLayout(settingsFrame);
+    settingsLayout->setSpacing(5);
+    settingsLayout->setContentsMargins(10, 10, 10, 10);
+    
+    // 创建5个设置行（使用自定义SettingRow控件）
+    SettingRow* rowIntercom = new SettingRow("开启对讲", this);
+    rowIntercom->setHighlighted(false);  // 移除红色边框高亮
+    rowIntercom->setChecked(false);
+    
+    SettingRow* rowSchedule = new SettingRow("开启浮动今日课表", this);
+    rowSchedule->setChecked(false);
+    
+    SettingRow* rowPrepare = new SettingRow("关联课前准备", this);
+    rowPrepare->setChecked(false);
+    
+    SettingRow* rowHomework = new SettingRow("关联家庭作业", this);
+    rowHomework->setChecked(false);
+    
+    SettingRow* rowNotify = new SettingRow("接收通知", this);
+    rowNotify->setChecked(false);
+    
+    // 添加到布局
+    settingsLayout->addWidget(rowIntercom);
+    settingsLayout->addWidget(rowSchedule);
+    settingsLayout->addWidget(rowPrepare);
+    settingsLayout->addWidget(rowHomework);
+    settingsLayout->addWidget(rowNotify);
+    
+    mainLayout->addWidget(settingsFrame);
 
-    // 开启对讲(开关)
-    QHBoxLayout* talkLayout = new QHBoxLayout;
-    QLabel* lblTalk = new QLabel("开启对讲", this);
-    QCheckBox* chkTalk = new QCheckBox(this);
-    talkLayout->addWidget(lblTalk);
-    talkLayout->addStretch();
-    talkLayout->addWidget(chkTalk);
-    mainLayout->addLayout(talkLayout);
-
-    // 解散群聊 / 退出群聊
+    // 解散群聊 / 退出群聊 - 隐藏这些按钮
     // 如果按钮已经存在，先删除它们（防止重复创建）
     if (m_btnDismiss) {
         m_btnDismiss->deleteLater();
@@ -283,12 +427,17 @@ void QGroupInfo::initData(QString groupName, QString groupNumberId, QString clas
         m_btnExit = nullptr;
     }
     
-    QHBoxLayout* bottomBtns = new QHBoxLayout;
+    // 创建按钮但不显示（保留功能以备后用）
+    QHBoxLayout* bottomBtns = new QHBoxLayout(this);
     m_btnDismiss = new QPushButton("解散群聊", this);
     m_btnExit = new QPushButton("退出群聊", this);
     bottomBtns->addWidget(m_btnDismiss);
     bottomBtns->addWidget(m_btnExit);
-    mainLayout->addLayout(bottomBtns);
+    // 隐藏按钮
+    m_btnDismiss->hide();
+    m_btnExit->hide();
+    // 不添加到主布局，这样它们就不会显示
+    // mainLayout->addLayout(bottomBtns);
     
     // 初始状态：默认都禁用，等InitGroupMember调用后再更新
     m_btnDismiss->setEnabled(false);
