@@ -7,6 +7,48 @@
 #include <QJsonObject>
 #include <QUrl>
 #include <QUrlQuery>
+#include <QFile>
+#include <QFileInfo>
+#include <QFileDialog>
+#include <QMessageBox>
+#include <QNetworkReply>
+#include <QGuiApplication>
+#include <QScreen>
+#include <QTimer>
+
+namespace {
+// 右下角非模态 Toast（自动消失）
+static void showBottomRightToast(const QString& text, int durationMs = 2000, bool success = true)
+{
+    QWidget* toast = new QWidget(nullptr);
+    toast->setAttribute(Qt::WA_DeleteOnClose, true);
+    toast->setAttribute(Qt::WA_TranslucentBackground, true);
+    toast->setWindowFlags(Qt::ToolTip | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
+
+    auto* layout = new QHBoxLayout(toast);
+    layout->setContentsMargins(12, 10, 12, 10);
+    layout->setSpacing(8);
+
+    auto* label = new QLabel(text, toast);
+    label->setWordWrap(true);
+    label->setStyleSheet("color: white; font-size: 13px;");
+    layout->addWidget(label);
+
+    const QString bg = success ? "rgba(46, 107, 230, 0.92)" : "rgba(220, 53, 69, 0.92)";
+    toast->setStyleSheet(QString("QWidget { background-color: %1; border-radius: 8px; }").arg(bg));
+    toast->adjustSize();
+
+    QScreen* screen = QGuiApplication::primaryScreen();
+    const QRect avail = screen ? screen->availableGeometry() : QRect(0, 0, 1920, 1080);
+    const int margin = 16;
+    const QSize size = toast->size();
+    const QPoint pos(avail.right() - size.width() - margin, avail.bottom() - size.height() - margin);
+    toast->move(pos);
+    toast->show();
+
+    QTimer::singleShot(durationMs, toast, &QWidget::close);
+}
+} // namespace
 
 ClassInfoDialog::ClassInfoDialog(QWidget *parent)
     : QDialog(parent),
@@ -17,7 +59,8 @@ ClassInfoDialog::ClassInfoDialog(QWidget *parent)
     m_dragging(false),
     m_visibleCloseButton(true),
     m_isEditMode(false),
-    m_httpHandler(nullptr)
+    m_httpHandler(nullptr),
+    m_networkManager(nullptr)
 {
     setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
     setAttribute(Qt::WA_TranslucentBackground);
@@ -37,6 +80,9 @@ ClassInfoDialog::ClassInfoDialog(QWidget *parent)
             updateClassInfo();
         });
     }
+    
+    // 初始化网络管理器（用于下载头像）
+    m_networkManager = new QNetworkAccessManager(this);
 
     setupUI();
     InitData();
@@ -88,28 +134,43 @@ void ClassInfoDialog::setupUI()
     QHBoxLayout* classIdLayout = new QHBoxLayout;
     classIdLayout->setSpacing(15);
     
-    // 头像
-    m_avatarLabel = new QLabel(this);
+    // 头像（使用AvatarLabel，支持编辑图标）
+    m_avatarLabel = new AvatarLabel(this);
     m_avatarLabel->setFixedSize(80, 80);
     m_avatarLabel->setStyleSheet(
         "QLabel { border: 2px solid white; border-radius: 40px; background-color: rgba(255,255,255,0.1); }"
     );
-    m_avatarLabel->setAlignment(Qt::AlignCenter);
-    m_avatarLabel->setScaledContents(true);
     
-    // 头像编辑图标（使用铅笔图标，如果有的话，否则使用占位符）
-    QLabel* editIconLabel = new QLabel(this);
-    editIconLabel->setFixedSize(20, 20);
-    editIconLabel->setStyleSheet("background: transparent;");
-    // 可以添加点击事件来编辑头像
-    // 暂时不显示图标，如果需要可以添加图标资源
+    // 设置“上传/更换头像”覆盖图标（右下角铅笔）
+    // 优先使用资源文件，避免依赖工作目录
+    QPixmap editIconPixmap(":/res/img/edit.png");
+    if (editIconPixmap.isNull()) {
+        // 兜底：相机图标
+        editIconPixmap = QPixmap(":/res/img/class_card_ic_camera@2x.png");
+    }
+    if (editIconPixmap.isNull()) {
+        editIconPixmap = QPixmap(":/res/img/class_card_ic_camera.png");
+    }
+    if (!editIconPixmap.isNull()) {
+        m_avatarLabel->setEditIconPosition(AvatarLabel::EditIconPosition::BottomRight);
+        m_avatarLabel->setEditIconMargin(0);
+        m_avatarLabel->setEditIcon(editIconPixmap);
+        m_avatarLabel->setToolTip("上传/更换班级头像");
+    }
     
+    // 连接编辑图标点击事件
+    connect(m_avatarLabel, &AvatarLabel::editIconClicked, this, [=]() {
+        // 弹出文件选择对话框
+        QString fileName = QFileDialog::getOpenFileName(this, "选择头像图片", "", "图片文件 (*.png *.jpg *.jpeg *.bmp)");
+        if (!fileName.isEmpty()) {
+            uploadClassAvatar(fileName);
+        }
+    });
+    
+    QWidget* avatarWidget = new QWidget;
     QVBoxLayout* avatarLayout = new QVBoxLayout;
     avatarLayout->setAlignment(Qt::AlignCenter);
     avatarLayout->addWidget(m_avatarLabel);
-    avatarLayout->addWidget(editIconLabel, 0, Qt::AlignCenter);
-    
-    QWidget* avatarWidget = new QWidget;
     avatarWidget->setLayout(avatarLayout);
     
     // 班级名称和编号
@@ -306,6 +367,14 @@ void ClassInfoDialog::handleClassInfoResponse(const QString& responseString)
         QString schoolName = dataObj["school_name"].toString(); // 学校名称
         QString address = dataObj["address"].toString(); // 学校地址
         
+        // 解析头像URL
+        QString faceUrl = dataObj["face_url"].toString(); // 班级头像URL
+        
+        // 更新头像显示
+        if (!faceUrl.isEmpty()) {
+            updateAvatarDisplay(faceUrl);
+        }
+        
         // 更新UI显示
         if (!className.isEmpty()) {
             m_classNameLabel->setText(className);
@@ -341,6 +410,7 @@ void ClassInfoDialog::handleClassInfoResponse(const QString& responseString)
         if (!schoolStage.isEmpty()) loginInfo.school_stage = schoolStage;
         if (!grade.isEmpty()) loginInfo.grade = grade;
         if (!schoolid.isEmpty()) loginInfo.schoolid = schoolid;
+        if (!faceUrl.isEmpty()) loginInfo.face_url = faceUrl;
         CommonInfo::InitClassLoginInfo(loginInfo);
         
         qDebug() << "班级信息更新成功 - 班级:" << className 
@@ -356,6 +426,11 @@ void ClassInfoDialog::handleClassInfoResponse(const QString& responseString)
 void ClassInfoDialog::updateClassInfo()
 {
     ClassLoginInfo loginInfo = CommonInfo::GetClassLoginInfo();
+
+    // 如果缓存里有头像URL，先显示（会走下载逻辑）
+    if (!loginInfo.face_url.isEmpty()) {
+        updateAvatarDisplay(loginInfo.face_url);
+    }
     
     // 更新班级名称
     if (!loginInfo.class_name.isEmpty()) {
@@ -488,5 +563,154 @@ void ClassInfoDialog::setRadius(int val)
 void ClassInfoDialog::visibleCloseButton(bool val)
 {
     m_visibleCloseButton = val;
+}
+
+void ClassInfoDialog::uploadClassAvatar(const QString& filePath)
+{
+    // 获取班级编号
+    ClassLoginInfo loginInfo = CommonInfo::GetClassLoginInfo();
+    if (loginInfo.class_code.isEmpty()) {
+        QMessageBox::warning(this, "错误", "班级编号为空，无法上传头像");
+        return;
+    }
+
+    // ===== 1. 读取头像图片 =====
+    QFile file(filePath);
+    if (!file.open(QIODevice::ReadOnly)) {
+        qDebug() << "Failed to open image file.";
+        QMessageBox::warning(this, "错误", "无法打开图片文件");
+        return;
+    }
+    QByteArray imageData = file.readAll(); // 二进制数据
+    file.close();
+
+    // ===== 2. 图片转 Base64 =====
+    QString imageBase64 = QString::fromLatin1(imageData.toBase64());
+    // 添加 data:image 前缀（如果需要）
+    if (!imageBase64.startsWith("data:image")) {
+        // 根据文件扩展名判断图片类型
+        QString suffix = QFileInfo(filePath).suffix().toLower();
+        QString mimeType = "image/png";
+        if (suffix == "jpg" || suffix == "jpeg") {
+            mimeType = "image/jpeg";
+        } else if (suffix == "gif") {
+            mimeType = "image/gif";
+        } else if (suffix == "bmp") {
+            mimeType = "image/bmp";
+        }
+        imageBase64 = QString("data:%1;base64,%2").arg(mimeType).arg(imageBase64);
+    }
+
+    // ===== 3. 构造 JSON 数据 =====
+    QMap<QString, QString> params;
+    params["class_code"] = loginInfo.class_code;
+    params["avatar"] = imageBase64;
+    
+    if (m_httpHandler) {
+        // 创建临时HTTP处理器用于接收响应
+        TAHttpHandler* avatarHandler = new TAHttpHandler(this);
+        connect(avatarHandler, &TAHttpHandler::success, this, [=](const QString& responseString) {
+            qDebug() << "上传头像响应:" << responseString;
+            QJsonDocument jsonDoc = QJsonDocument::fromJson(responseString.toUtf8());
+            if (jsonDoc.isObject()) {
+                QJsonObject obj = jsonDoc.object();
+                if (obj.contains("data") && obj["data"].isObject()) {
+                    QJsonObject dataObj = obj["data"].toObject();
+                    int code = dataObj["code"].toInt();
+                    QString message = dataObj["message"].toString();
+                    
+                    if (code == 200) {
+                        QString faceUrl = dataObj["face_url"].toString();
+                        if (!faceUrl.isEmpty()) {
+                            // 更新头像显示
+                            updateAvatarDisplay(faceUrl);
+
+                            // 写回缓存，便于下次直接显示
+                            ClassLoginInfo li = CommonInfo::GetClassLoginInfo();
+                            li.face_url = faceUrl;
+                            CommonInfo::InitClassLoginInfo(li);
+
+                            // 非模态右下角提示
+                            showBottomRightToast("班级头像更新成功", 2200, true);
+                        } else {
+                            showBottomRightToast(message.isEmpty() ? "班级头像更新成功" : message, 2200, true);
+                        }
+                    } else {
+                        QMessageBox::warning(this, "错误", QString("上传头像失败: %1").arg(message));
+                    }
+                }
+            }
+            avatarHandler->deleteLater();
+        });
+        connect(avatarHandler, &TAHttpHandler::failed, this, [=](const QString& errorString) {
+            qWarning() << "上传头像失败:" << errorString;
+            QMessageBox::warning(this, "错误", QString("上传头像失败: %1").arg(errorString));
+            avatarHandler->deleteLater();
+        });
+        
+        // 添加认证token（如果有）
+        if (!loginInfo.access_token.isEmpty()) {
+            avatarHandler->addHeader("Authorization", QString("Bearer %1").arg(loginInfo.access_token));
+        }
+        
+        avatarHandler->post(QString("http://47.100.126.194:5000/classes/update-avatar"), params);
+    }
+}
+
+void ClassInfoDialog::updateAvatarDisplay(const QString& avatarUrl)
+{
+    if (!m_avatarLabel) return;
+    
+    // 如果有头像URL，尝试加载并显示图片
+    if (!avatarUrl.isEmpty()) {
+        QPixmap pixmap;
+        bool loaded = false;
+        
+        // 1. 尝试作为本地文件路径加载
+        if (QFile::exists(avatarUrl)) {
+            loaded = pixmap.load(avatarUrl);
+        }
+        // 2. 尝试作为HTTP/HTTPS URL下载
+        else if (avatarUrl.startsWith("http://") || avatarUrl.startsWith("https://")) {
+            if (m_networkManager) {
+                QUrl url(avatarUrl);
+                QNetworkRequest request(url);
+                QNetworkReply* reply = m_networkManager->get(request);
+                // 异步下载
+                connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+                    if (reply->error() == QNetworkReply::NoError) {
+                        QByteArray imageData = reply->readAll();
+                        QPixmap pixmap;
+                        if (pixmap.loadFromData(imageData)) {
+                            // 缩放图片以适应标签大小，保持宽高比
+                            pixmap = pixmap.scaled(m_avatarLabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+                            m_avatarLabel->setAvatar(pixmap);
+                        }
+                    }
+                    reply->deleteLater();
+                });
+                return; // 异步下载，先返回
+            }
+        }
+        // 3. 尝试作为base64数据加载
+        else {
+            // 检查是否是base64数据（可能包含data:image前缀）
+            QString base64Data = avatarUrl;
+            if (base64Data.contains("base64,")) {
+                base64Data = base64Data.section("base64,", 1);
+            }
+            QByteArray imageData = QByteArray::fromBase64(base64Data.toLatin1());
+            if (!imageData.isEmpty()) {
+                loaded = pixmap.loadFromData(imageData);
+            }
+        }
+        
+        // 如果加载成功，显示图片
+        if (loaded && !pixmap.isNull()) {
+            // 缩放图片以适应标签大小，保持宽高比
+            pixmap = pixmap.scaled(m_avatarLabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+            m_avatarLabel->setAvatar(pixmap);
+        }
+    }
 }
 

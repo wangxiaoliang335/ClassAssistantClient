@@ -6,8 +6,15 @@
 #include <QHBoxLayout>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QFileDialog>
+#include <QFile>
+#include <QFileInfo>
+#include <QMessageBox>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
 #include "CommonInfo.h"
 #include "TAHttpHandler.h"
+#include "AvatarLabel.h"
 
 class ClassInfoDialog : public QDialog
 {
@@ -50,7 +57,7 @@ private:
     QPushButton* m_cancelButton;
     QPushButton* m_confirmButton;
     
-    QLabel* m_avatarLabel;
+    AvatarLabel* m_avatarLabel;
     QLabel* m_classNameLabel;
     QLabel* m_classCodeLabel;
     
@@ -79,7 +86,15 @@ private:
     // HTTP处理器
     TAHttpHandler* m_httpHandler;
     
+    // 网络管理器（用于下载头像）
+    QNetworkAccessManager* m_networkManager;
+    
     // 处理服务器响应
     void handleClassInfoResponse(const QString& responseString);
+    
+    // 头像上传相关
+    void uploadClassAvatar(const QString& filePath);
+    void updateAvatarDisplay(const QString& avatarUrl);
+
 };
 

@@ -16,6 +16,17 @@
 #include <QList>
 #include <QDateTime>
 #include <QDebug>
+#include <QMouseEvent>
+#include <QResizeEvent>
+#include <QShowEvent>
+#include <QEvent>
+#include <QPoint>
+#include <QCursor>
+#include <QRect>
+#include <QDesktopWidget>
+#include <QPainter>
+#include <QPainterPath>
+#include <QPaintEvent>
 #include "ImSDK/includes/TIMCloud.h"
 #include "ImSDK/includes/TIMCloudDef.h"
 #include "ImSDK/includes/TIMCloudCallback.h"
@@ -40,32 +51,39 @@ public:
         // 设置静态实例指针（用于全局回调发出信号）
         s_instance() = this;
         
+        // 去掉标题栏
+        setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
+        setAttribute(Qt::WA_TranslucentBackground); // 设置透明背景以支持圆角
         setWindowTitle("群通知");
         resize(750, 700);
-        setStyleSheet("background-color: #f5f5f5; font-size: 14px;");
+        m_radius = 20; // 圆角半径
+        setStyleSheet("QDialog { background-color: transparent; color: white; font-size: 14px; }"); // 透明背景，白色文字
+        
+        // 启用鼠标跟踪以检测鼠标进入/离开
+        setMouseTracking(true);
+
+        // 创建关闭按钮
+        m_btnClose = new QPushButton("X", this);
+        m_btnClose->setFixedSize(30, 30);
+        m_btnClose->setStyleSheet(
+            "QPushButton { background-color: orange; color: white; font-weight:bold; font-size: 14px; border: 1px solid #555; border-radius: 4px; }"
+            "QPushButton:hover { background-color: #cc6600; }"
+        );
+        m_btnClose->hide(); // 初始隐藏
+        connect(m_btnClose, &QPushButton::clicked, this, &QDialog::close);
+        
+        // 为关闭按钮安装事件过滤器，确保鼠标在按钮上时不会隐藏
+        m_btnClose->installEventFilter(this);
 
         QVBoxLayout* mainLayout = new QVBoxLayout(this);
-
-        // ===== 顶部标题栏 =====
-        QHBoxLayout* titleLayout = new QHBoxLayout;
-        QLabel* lblTitle = new QLabel("群通知");
-        lblTitle->setStyleSheet("font-weight: bold; font-size: 20px;");
-        QPushButton* btnFilter = new QPushButton("🔍");   // 可替换为图标
-        QPushButton* btnDelete = new QPushButton("🗑");
-        btnFilter->setFixedSize(30, 30);
-        btnDelete->setFixedSize(30, 30);
-        btnFilter->setFlat(true);
-        btnDelete->setFlat(true);
-        titleLayout->addWidget(lblTitle);
-        titleLayout->addStretch();
-        titleLayout->addWidget(btnFilter);
-        titleLayout->addWidget(btnDelete);
-        mainLayout->addLayout(titleLayout);
+        mainLayout->setContentsMargins(15, 40, 15, 15); // 增加顶部边距，为关闭按钮留出空间
 
         // ===== 滚动区域 =====
         QScrollArea* scroll = new QScrollArea;
         scroll->setWidgetResizable(true);
+        scroll->setStyleSheet("background-color: #808080; color: white;"); // 灰色背景，白色文字
         QWidget* container = new QWidget;
+        container->setStyleSheet("background-color: #808080; color: white;"); // 灰色背景，白色文字
         listLayout = new QVBoxLayout(container);
         listLayout->setSpacing(12);
 
@@ -86,6 +104,115 @@ public:
         
         // 连接全局信号，接收群组系统消息
         deliverPendingTips();
+    }
+
+protected:
+    // 绘制圆角窗口
+    void paintEvent(QPaintEvent* event) override
+    {
+        Q_UNUSED(event);
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing);
+        
+        QRect rect(0, 0, width(), height());
+        QPainterPath path;
+        path.addRoundedRect(rect, m_radius, m_radius);
+        
+        p.fillPath(path, QBrush(QColor(128, 128, 128))); // 灰色背景
+    }
+    
+    // 鼠标进入窗口时显示关闭按钮
+    void enterEvent(QEvent* event) override
+    {
+        if (m_btnClose) {
+            m_btnClose->show();
+        }
+        QDialog::enterEvent(event);
+    }
+    
+    // 鼠标离开窗口时隐藏关闭按钮
+    void leaveEvent(QEvent* event) override
+    {
+        // 检查鼠标是否真的离开了窗口（包括关闭按钮）
+        QPoint globalPos = QCursor::pos();
+        QRect widgetRect = QRect(mapToGlobal(QPoint(0, 0)), size());
+        if (!widgetRect.contains(globalPos) && m_btnClose) {
+            // 如果鼠标不在窗口内，检查是否在关闭按钮上
+            QRect btnRect = QRect(m_btnClose->mapToGlobal(QPoint(0, 0)), m_btnClose->size());
+            if (!btnRect.contains(globalPos)) {
+                m_btnClose->hide();
+            }
+        }
+        QDialog::leaveEvent(event);
+    }
+    
+    // 窗口大小改变时更新关闭按钮位置
+    void resizeEvent(QResizeEvent* event) override
+    {
+        if (m_btnClose) {
+            m_btnClose->move(width() - 35, 5);
+        }
+        QDialog::resizeEvent(event);
+    }
+    
+    // 窗口显示时更新关闭按钮位置
+    void showEvent(QShowEvent* event) override
+    {
+        if (m_btnClose) {
+            m_btnClose->move(width() - 35, 5);
+            // 窗口显示时也显示关闭按钮
+            m_btnClose->show();
+        }
+        
+        // 确保窗口位置在屏幕可见区域内
+        QRect screenGeometry = QApplication::desktop()->availableGeometry();
+        QRect windowGeometry = geometry();
+        
+        // 如果窗口完全在屏幕外，移动到屏幕中央
+        if (!screenGeometry.intersects(windowGeometry)) {
+            move(screenGeometry.center() - QPoint(windowGeometry.width() / 2, windowGeometry.height() / 2));
+        }
+        
+        // 确保窗口显示在最前面
+        raise();
+        activateWindow();
+        QDialog::showEvent(event);
+    }
+    
+    // 事件过滤器，处理关闭按钮的鼠标事件
+    bool eventFilter(QObject* obj, QEvent* event) override
+    {
+        if (obj == m_btnClose) {
+            if (event->type() == QEvent::Enter) {
+                // 鼠标进入关闭按钮时确保显示
+                m_btnClose->show();
+            } else if (event->type() == QEvent::Leave) {
+                // 鼠标离开关闭按钮时，检查是否还在窗口内
+                QPoint globalPos = QCursor::pos();
+                QRect widgetRect = QRect(mapToGlobal(QPoint(0, 0)), size());
+                if (!widgetRect.contains(globalPos)) {
+                    m_btnClose->hide();
+                }
+            }
+        }
+        return QDialog::eventFilter(obj, event);
+    }
+    
+    // 重写鼠标事件以实现窗口拖动
+    void mousePressEvent(QMouseEvent* event) override
+    {
+        if (event->button() == Qt::LeftButton) {
+            m_dragPosition = event->globalPos() - frameGeometry().topLeft();
+            event->accept();
+        }
+    }
+    
+    void mouseMoveEvent(QMouseEvent* event) override
+    {
+        if (event->buttons() & Qt::LeftButton && !m_dragPosition.isNull()) {
+            move(event->globalPos() - m_dragPosition);
+            event->accept();
+        }
     }
 
 signals:
@@ -242,7 +369,7 @@ private:
         const QString& remark)
     {
         QFrame* itemFrame = new QFrame;
-        itemFrame->setStyleSheet("background-color: white; border-radius: 8px;");
+        itemFrame->setStyleSheet("background-color: #808080; border-radius: 8px;"); // 灰色背景
         QVBoxLayout* outerLayout = new QVBoxLayout(itemFrame);
 
         // 第一行：头像 + 昵称 + 时间
@@ -250,21 +377,23 @@ private:
         //QLabel* avatar = new QLabel;
         //avatar->setFixedSize(50, 50);
         //avatar->setStyleSheet("background-color: lightgray; border-radius: 25px;");
-        QLabel* lblNameTime = new QLabel(QString("<b style='color:#0055cc'>%1</b> %2").arg(name, time));
+        QLabel* lblNameTime = new QLabel(QString("<b style='color:#66b3ff'>%1</b> <span style='color:#ffffff'>%2</span>").arg(name, time));
+        lblNameTime->setStyleSheet("background-color: #808080; color: #ffffff;"); // 灰色背景，白色文字
         //topLayout->addWidget(avatar);
         topLayout->addWidget(lblNameTime);
         topLayout->addStretch();
         outerLayout->addLayout(topLayout);
 
         // 第二行：申请加入 + 群名
-        QLabel* lblAction = new QLabel(QString("%1 <a href='#' style='color:#0055cc'>%2</a>").arg(action, groupName));
+        QLabel* lblAction = new QLabel(QString("<span style='color:#ffffff'>%1</span> <a href='#' style='color:#66b3ff'>%2</a>").arg(action, groupName));
         lblAction->setTextFormat(Qt::RichText);
         lblAction->setOpenExternalLinks(false);
+        lblAction->setStyleSheet("background-color: #808080; color: #ffffff;"); // 灰色背景，白色文字
         outerLayout->addWidget(lblAction);
 
         // 留言
         QLabel* lblRemark = new QLabel(remark);
-        lblRemark->setStyleSheet("color: gray;");
+        lblRemark->setStyleSheet("background-color: #808080; color: #ffffff;"); // 灰色背景，白色文字
         outerLayout->addWidget(lblRemark);
 
         //// 操作按钮行
@@ -283,6 +412,9 @@ private:
     }
     bool m_bInit = false;
     QVBoxLayout* listLayout = NULL;
+    QPushButton* m_btnClose = nullptr; // 关闭按钮
+    QPoint m_dragPosition; // 用于窗口拖动
+    int m_radius; // 圆角半径
 
     static void handleGroupTipsArray(const QJsonArray& tipArray)
     {

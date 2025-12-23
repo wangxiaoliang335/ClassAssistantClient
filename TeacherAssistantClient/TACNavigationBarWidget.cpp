@@ -47,7 +47,7 @@ TACNavigationBarWidget::TACNavigationBarWidget(QWidget *parent)
         emit navType(TACNavigationBarWidgetType::IM);
         });
     buttonGroup->addButton(phoneButton);
-    layout->addWidget(phoneButton);
+    layout->addWidget(phoneButton);*/
 
     QPushButton* homeworkButton = new QPushButton(this);
     homeworkButton->setFixedSize(BUTTON_SIZE);
@@ -57,7 +57,7 @@ TACNavigationBarWidget::TACNavigationBarWidget(QWidget *parent)
         emit navType(TACNavigationBarWidgetType::HOMEWORK);
         });
     buttonGroup->addButton(homeworkButton);
-    layout->addWidget(homeworkButton);*/
+    layout->addWidget(homeworkButton);
 
 
     //QPushButton* editButton = new QPushButton(this);

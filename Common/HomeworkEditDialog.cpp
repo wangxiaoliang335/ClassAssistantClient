@@ -23,14 +23,15 @@ HomeworkEditDialog::HomeworkEditDialog(QWidget* parent)
     btnCloseTop->setFixedSize(30, 30);
     btnCloseTop->setStyleSheet(
         "QPushButton {"
-        "background-color: transparent;"
+        "background-color: #666666;"
         "color: white;"
         "font-size: 18px;"
         "font-weight: bold;"
         "border: none;"
+        "border-radius: 4px;"
         "}"
         "QPushButton:hover {"
-        "background-color: #444;"
+        "background-color: #777777;"
         "}"
     );
     connect(btnCloseTop, &QPushButton::clicked, this, &HomeworkEditDialog::onCloseClicked);
@@ -67,74 +68,34 @@ HomeworkEditDialog::HomeworkEditDialog(QWidget* parent)
     );
     mainLayout->addWidget(dateEdit);
 
-    // 科目作业输入区域
-    QVBoxLayout* contentLayout = new QVBoxLayout;
-    contentLayout->setSpacing(10);
-
-    // 语文
-    QLabel* labelChinese = new QLabel("语文:");
-    labelChinese->setStyleSheet("font-size: 14px; color: white;");
-    contentLayout->addWidget(labelChinese);
-    
-    QTextEdit* editChinese = new QTextEdit;
-    editChinese->setPlaceholderText("请输入语文作业内容...");
-    editChinese->setStyleSheet(
-        "QTextEdit {"
+    // 选择科目
+    subjectCombo = new QComboBox(this);
+    subjectCombo->setStyleSheet(
+        "QComboBox {"
         "background-color: #3b3b3b;"
         "color: white;"
         "border: 1px solid #555;"
+        "padding: 6px 10px;"
         "border-radius: 4px;"
-        "padding: 8px;"
         "font-size: 14px;"
-        "min-height: 80px;"
         "}"
-    );
-    subjectEdits["语文"] = editChinese;
-    contentLayout->addWidget(editChinese);
-
-    // 数学
-    QLabel* labelMath = new QLabel("数学:");
-    labelMath->setStyleSheet("font-size: 14px; color: white;");
-    contentLayout->addWidget(labelMath);
-    
-    QTextEdit* editMath = new QTextEdit;
-    editMath->setPlaceholderText("请输入数学作业内容...");
-    editMath->setStyleSheet(
-        "QTextEdit {"
+        "QComboBox QAbstractItemView {"
         "background-color: #3b3b3b;"
         "color: white;"
-        "border: 1px solid #555;"
-        "border-radius: 4px;"
-        "padding: 8px;"
-        "font-size: 14px;"
-        "min-height: 80px;"
+        "selection-background-color: #0052a3;"
         "}"
     );
-    subjectEdits["数学"] = editMath;
-    contentLayout->addWidget(editMath);
+    mainLayout->addWidget(subjectCombo);
 
-    // 英语
-    QLabel* labelEnglish = new QLabel("英语:");
-    labelEnglish->setStyleSheet("font-size: 14px; color: white;");
-    contentLayout->addWidget(labelEnglish);
-    
-    QTextEdit* editEnglish = new QTextEdit;
-    editEnglish->setPlaceholderText("请输入英语作业内容...");
-    editEnglish->setStyleSheet(
-        "QTextEdit {"
-        "background-color: #3b3b3b;"
-        "color: white;"
-        "border: 1px solid #555;"
-        "border-radius: 4px;"
-        "padding: 8px;"
-        "font-size: 14px;"
-        "min-height: 80px;"
-        "}"
-    );
-    subjectEdits["英语"] = editEnglish;
-    contentLayout->addWidget(editEnglish);
+    // 编辑区（根据科目切换）
+    editorStack = new QStackedWidget(this);
+    mainLayout->addWidget(editorStack, 1);
 
-    mainLayout->addLayout(contentLayout);
+    connect(subjectCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &HomeworkEditDialog::onSubjectChanged);
+
+    // 默认科目（若外部未传入）
+    setAvailableSubjects(QStringList() << QString::fromUtf8(u8"语文") << QString::fromUtf8(u8"数学") << QString::fromUtf8(u8"英语"));
     mainLayout->addStretch();
 
     // 发布按钮
@@ -161,6 +122,69 @@ HomeworkEditDialog::HomeworkEditDialog(QWidget* parent)
     mainLayout->addLayout(btnLayout);
 }
 
+void HomeworkEditDialog::setAvailableSubjects(const QStringList& subjects)
+{
+    // 保留已有内容（按科目名）
+    QMap<QString, QString> existing;
+    for (auto it = subjectEdits.begin(); it != subjectEdits.end(); ++it) {
+        existing[it.key()] = it.value()->toPlainText();
+    }
+
+    subjectEdits.clear();
+
+    if (subjectCombo) {
+        subjectCombo->blockSignals(true);
+        subjectCombo->clear();
+    }
+    if (editorStack) {
+        while (editorStack->count() > 0) {
+            QWidget* w = editorStack->widget(0);
+            editorStack->removeWidget(w);
+            w->deleteLater();
+        }
+    }
+
+    const QString editorStyle =
+        "QTextEdit {"
+        "background-color: #3b3b3b;"
+        "color: white;"
+        "border: 1px solid #555;"
+        "border-radius: 4px;"
+        "padding: 8px;"
+        "font-size: 14px;"
+        "min-height: 280px;"
+        "}";
+
+    QStringList cleaned;
+    for (const auto& s : subjects) {
+        const QString t = s.trimmed();
+        if (!t.isEmpty() && !cleaned.contains(t)) cleaned.append(t);
+    }
+    if (cleaned.isEmpty()) {
+        cleaned << QString::fromUtf8(u8"语文") << QString::fromUtf8(u8"数学") << QString::fromUtf8(u8"英语");
+    }
+
+    for (const auto& subject : cleaned) {
+        if (subjectCombo) subjectCombo->addItem(subject);
+
+        QTextEdit* edit = new QTextEdit(this);
+        edit->setPlaceholderText(QString::fromUtf8(u8"请输入%1作业内容...").arg(subject));
+        edit->setStyleSheet(editorStyle);
+        edit->setPlainText(existing.value(subject));
+
+        subjectEdits[subject] = edit;
+        if (editorStack) editorStack->addWidget(edit);
+    }
+
+    if (subjectCombo) {
+        subjectCombo->setCurrentIndex(0);
+        subjectCombo->blockSignals(false);
+    }
+    if (editorStack) {
+        editorStack->setCurrentIndex(0);
+    }
+}
+
 void HomeworkEditDialog::setDate(const QDate& date)
 {
     if (dateEdit) {
@@ -177,27 +201,65 @@ void HomeworkEditDialog::setHomeworkContent(const QMap<QString, QString>& conten
     }
 }
 
+void HomeworkEditDialog::onSubjectChanged(int idx)
+{
+    if (editorStack && idx >= 0 && idx < editorStack->count()) {
+        editorStack->setCurrentIndex(idx);
+    }
+}
+
 void HomeworkEditDialog::onPublishClicked()
 {
-    QMap<QString, QString> homeworkContent;
-    for (auto it = subjectEdits.begin(); it != subjectEdits.end(); ++it) {
-        QString text = it.value()->toPlainText().trimmed();
-        if (!text.isEmpty()) {
-            homeworkContent[it.key()] = text;
-        }
-    }
-    
-    if (homeworkContent.isEmpty()) {
-        QMessageBox::warning(this, "提示", "请至少输入一个科目的作业内容！");
+    const QString subject = subjectCombo ? subjectCombo->currentText().trimmed() : QString();
+    if (subject.isEmpty() || !subjectEdits.contains(subject)) {
+        QMessageBox::warning(this, QString::fromUtf8(u8"提示"), QString::fromUtf8(u8"请选择科目！"));
         return;
     }
-    
-    emit homeworkPublished(dateEdit->date(), homeworkContent);
+
+    const QString text = subjectEdits[subject]->toPlainText().trimmed();
+    if (text.isEmpty()) {
+        QMessageBox::warning(this, QString::fromUtf8(u8"提示"), QString::fromUtf8(u8"请输入作业内容！"));
+        return;
+    }
+
+    // 新信号：只发布当前选择的科目
+    emit homeworkPublishedSingle(dateEdit->date(), subject, text);
     accept();
 }
 
 void HomeworkEditDialog::onCloseClicked()
 {
     reject();
+}
+
+void HomeworkEditDialog::mousePressEvent(QMouseEvent* event)
+{
+    if (event->button() == Qt::LeftButton) {
+        m_dragging = true;
+        m_dragStartPos = event->globalPos() - frameGeometry().topLeft();
+        event->accept();
+        return;
+    }
+    QDialog::mousePressEvent(event);
+}
+
+void HomeworkEditDialog::mouseMoveEvent(QMouseEvent* event)
+{
+    if (m_dragging && (event->buttons() & Qt::LeftButton)) {
+        move(event->globalPos() - m_dragStartPos);
+        event->accept();
+        return;
+    }
+    QDialog::mouseMoveEvent(event);
+}
+
+void HomeworkEditDialog::mouseReleaseEvent(QMouseEvent* event)
+{
+    if (event->button() == Qt::LeftButton) {
+        m_dragging = false;
+        event->accept();
+        return;
+    }
+    QDialog::mouseReleaseEvent(event);
 }
 

@@ -117,7 +117,7 @@ ResetPwdDialog::ResetPwdDialog(QWidget* parent)
     closeButton->hide();
     connect(closeButton, &QPushButton::clicked, this, &QDialog::reject);
 
-    QHBoxLayout* titleLayout = new QHBoxLayout;
+    QHBoxLayout* titleLayout = new QHBoxLayout(this);
     
     titleLayout->addSpacing(163);
     titleLayout->addWidget(titleLabel);
@@ -137,11 +137,11 @@ ResetPwdDialog::ResetPwdDialog(QWidget* parent)
     phoneIcon->setPixmap(QPixmap(":/icons/phone.png").scaled(16, 16, Qt::KeepAspectRatio, Qt::SmoothTransformation));
     phoneIcon->setFixedSize(16, 16);
     phoneIcon->setStyleSheet("background: transparent;");
-    QHBoxLayout* phoneLayout = new QHBoxLayout;
+    QHBoxLayout* phoneLayout = new QHBoxLayout(this);
     phoneLayout->setContentsMargins(8, 0, 8, 0);
     phoneLayout->addWidget(phoneIcon);
     phoneLayout->addWidget(phoneEdit);
-    QWidget* phoneWidget = new QWidget;
+    QWidget* phoneWidget = new QWidget(this);
     phoneWidget->setLayout(phoneLayout);
     phoneWidget->setStyleSheet("background-color: rgba(255,255,255,0.08); border-radius:6px;");
 
@@ -165,13 +165,13 @@ ResetPwdDialog::ResetPwdDialog(QWidget* parent)
     );
     getCodeButton->setCursor(Qt::PointingHandCursor);
 
-    QHBoxLayout* codeLayout = new QHBoxLayout;
+    QHBoxLayout* codeLayout = new QHBoxLayout(this);
     codeLayout->setContentsMargins(8, 0, 8, 0);
     codeLayout->addWidget(codeIcon);
     codeLayout->addWidget(codeEdit);
     codeLayout->addSpacing(5);
     codeLayout->addWidget(getCodeButton);
-    QWidget* codeWidget = new QWidget;
+    QWidget* codeWidget = new QWidget(this);
     codeWidget->setLayout(codeLayout);
     codeWidget->setStyleSheet("background-color: rgba(255,255,255,0.08); border-radius:6px;");
 
@@ -196,13 +196,13 @@ ResetPwdDialog::ResetPwdDialog(QWidget* parent)
     //);
     //getCodeButton->setCursor(Qt::PointingHandCursor);
 
-    QHBoxLayout* pwdLayout = new QHBoxLayout;
+    QHBoxLayout* pwdLayout = new QHBoxLayout(this);
     pwdLayout->setContentsMargins(8, 0, 8, 0);
     pwdLayout->addWidget(pwdIcon);
     pwdLayout->addWidget(pwdEdit);
     //pwdLayout->addSpacing(5);
     //pwdLayout->addWidget(getCodeButton);
-    QWidget* pwdWidget = new QWidget;
+    QWidget* pwdWidget = new QWidget(this);
     pwdWidget->setLayout(pwdLayout);
     pwdWidget->setStyleSheet("background-color: rgba(255,255,255,0.08); border-radius:6px;");
 
@@ -226,13 +226,13 @@ ResetPwdDialog::ResetPwdDialog(QWidget* parent)
     //);
     //getCodeButton->setCursor(Qt::PointingHandCursor);
 
-    QHBoxLayout* secPwdLayout = new QHBoxLayout;
+    QHBoxLayout* secPwdLayout = new QHBoxLayout(this);
     secPwdLayout->setContentsMargins(8, 0, 8, 0);
     secPwdLayout->addWidget(secPwdIcon);
     secPwdLayout->addWidget(secPwdEdit);
     //pwdLayout->addSpacing(5);
     //pwdLayout->addWidget(getCodeButton);
-    QWidget* secPwdWidget = new QWidget;
+    QWidget* secPwdWidget = new QWidget(this);
     secPwdWidget->setLayout(secPwdLayout);
     secPwdWidget->setStyleSheet("background-color: rgba(255,255,255,0.08); border-radius:6px;");
     /***************************************************************/

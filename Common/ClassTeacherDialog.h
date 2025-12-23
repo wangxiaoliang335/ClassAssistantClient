@@ -1,4 +1,5 @@
 ﻿#include <QApplication>
+#include <QGuiApplication>
 #include <QDialog>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -30,6 +31,9 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QRegion>
+#include <QScrollArea>
+#include <QScreen>
+#include "ScheduleDialog.h"  // 包含以使用 TempRoomStorage
 
 // 自定义消息对话框类
 class CustomMessageDialog : public QDialog
@@ -294,6 +298,14 @@ public:
         mainLayout->setContentsMargins(20, 40, 20, 20);
         mainLayout->setSpacing(16);
 
+        // 统一设置深灰背景，便于控件辨识
+        this->setStyleSheet(
+            "QDialog { background-color: #565656; }"
+            "QScrollArea { background: #565656; border: none; }"
+            "QScrollArea > QWidget > QWidget { background: #565656; }"
+            "QLabel { color: #f5f5f5; }"
+        );
+
         // 窗口标题标签
         QLabel* lblWindowTitle = new QLabel(QString::fromUtf8(u8"班级 / 教师选择"));
         lblWindowTitle->setAlignment(Qt::AlignCenter);
@@ -315,13 +327,22 @@ public:
         classLayout->addWidget(lblClassTitle);
 
         QWidget* classListWidget = new QWidget;
+        classListWidget->setStyleSheet("background-color: #606060;");
         classListLayout = new QVBoxLayout(classListWidget);
         classListLayout->setSpacing(8);
         // 初始化班级单选分组，保证互斥
         classGroup = new QButtonGroup(this);
         classGroup->setExclusive(true);
-        classLayout->addWidget(classListWidget);
+        // 为班级列表增加滚动区域，避免超出屏幕
+        QScrollArea* classScrollArea = new QScrollArea;
+        classScrollArea->setWidget(classListWidget);
+        classScrollArea->setWidgetResizable(true);
+        classScrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        classScrollArea->setFrameShape(QFrame::NoFrame);
+        classLayout->addWidget(classScrollArea);
         mainLayout->addLayout(classLayout);
+        // 班级与教师区域之间留白，避免遮挡（再向下移动一些）
+        mainLayout->addSpacing(40);
 
         // 教师区域
         QVBoxLayout* teacherLayout = new QVBoxLayout;
@@ -331,12 +352,16 @@ public:
         teacherLayout->addWidget(lblTeacherTitle);
 
         QWidget* teacherListWidget = new QWidget;
+        teacherListWidget->setStyleSheet("background-color: #606060;");
         teacherListLayout = new QVBoxLayout(teacherListWidget);
         teacherListLayout->setSpacing(8);
-        //addPersonRow(teacherListLayout, ":/icons/avatar1.png", "软件开发工程师", true); // 这里演示一个选中状态
-        //addPersonRow(teacherListLayout, ":/icons/avatar2.png", "苏州-UI-已入职");
-        //addPersonRow(teacherListLayout, ":/icons/avatar3.png", "平平淡淡");
-        teacherLayout->addWidget(teacherListWidget);
+        // 为教师列表增加滚动区域，避免超出屏幕
+        QScrollArea* teacherScrollArea = new QScrollArea;
+        teacherScrollArea->setWidget(teacherListWidget);
+        teacherScrollArea->setWidgetResizable(true);
+        teacherScrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        teacherScrollArea->setFrameShape(QFrame::NoFrame);
+        teacherLayout->addWidget(teacherScrollArea);
         mainLayout->addLayout(teacherLayout);
 
         // 底部按钮
@@ -362,6 +387,17 @@ public:
             // 不再发送 scheduleDialogNeeded 信号，ScheduleDialog 只在点击按钮时创建
             accept();
         });
+
+        // 限制窗口高度，避免超过屏幕高度（保留约20%边距）
+        if (QGuiApplication::primaryScreen()) {
+            int maxH = static_cast<int>(QGuiApplication::primaryScreen()->availableGeometry().height() * 0.8);
+            setMaximumHeight(maxH);
+        }
+
+        // 增加窗口和列表的最小高度，确保选项清晰可见
+        setMinimumHeight(520);
+        classScrollArea->setMinimumHeight(180);
+        teacherScrollArea->setMinimumHeight(180);
     }
 
     void InitData(QSet<QString> setclassId)
@@ -573,6 +609,8 @@ private:
         QString grade, QString class_taught, QButtonGroup* pBtnGroup, bool checked = false)
     {
         QHBoxLayout* rowLayout = new QHBoxLayout;
+        rowLayout->setContentsMargins(10, 6, 10, 6);
+        rowLayout->setSpacing(10);
         QRadioButton* radio = new QRadioButton;
         radio->setChecked(checked);
         radio->setProperty("phone", phone); // 可以是 int / QString / QVariant
@@ -583,12 +621,13 @@ private:
 
         QLabel* avatar = new QLabel;
         avatar->setFixedSize(36, 36);
-        avatar->setStyleSheet("background-color: lightgray; border-radius: 18px;");
+        avatar->setStyleSheet("background-color: #707070; border-radius: 18px;");
         // 如果有头像图片资源，可以这样设置：
         QPixmap pix(iconPath);
         avatar->setPixmap(pix.scaled(36, 36, Qt::KeepAspectRatio, Qt::SmoothTransformation));
 
         QLabel* lblName = new QLabel(name);
+        lblName->setStyleSheet("color: #f5f5f5;");
         rowLayout->addWidget(radio);
         rowLayout->addWidget(avatar);
         rowLayout->addWidget(lblName);
@@ -601,6 +640,7 @@ private:
 
         QWidget* rowWidget = new QWidget;
         rowWidget->setLayout(rowLayout);
+        rowWidget->setStyleSheet("background-color: #5c5c5c;");
         parentLayout->addWidget(rowWidget);
     }
     private slots:
@@ -608,8 +648,79 @@ private:
         void onWebSocketMessage(const QString& msg)
         {
             qDebug() << " ClassTeacherDialog msg:" << msg; // 发信号;
-            // 这里可以解析 JSON 或直接追加到聊天窗口
-            //addTextMessage(":/avatar_teacher.png", "对方", msg, false);
+            
+            // 解析JSON消息
+            QJsonParseError parseError;
+            QJsonDocument doc = QJsonDocument::fromJson(msg.toUtf8(), &parseError);
+            if (parseError.error != QJsonParseError::NoError || !doc.isObject()) {
+                // 不是JSON对象，按原逻辑处理
+                m_NoticeMsg.push_back(msg);
+                return;
+            }
+            
+            QJsonObject rootObj = doc.object();
+            QString type = rootObj.value(QStringLiteral("type")).toString();
+            
+            // 处理创建班级群返回消息（type: "3"）
+            if (type == QStringLiteral("3")) {
+                QString message = rootObj.value(QStringLiteral("message")).toString();
+                QString groupId = rootObj.value(QStringLiteral("group_id")).toString();
+                QString groupName = rootObj.value(QStringLiteral("groupname")).toString();
+                
+                if (!groupId.isEmpty()) {
+                    qDebug() << "收到创建群组成功消息，群组ID:" << groupId << "，群组名称:" << groupName;
+                    
+                    // 解析并保存临时房间信息到全局存储
+                    // 这样即使 ScheduleDialog 还没有打开，也能获取到临时房间信息
+                    if (rootObj.contains(QStringLiteral("temp_room")) && rootObj.value(QStringLiteral("temp_room")).isObject()) {
+                        QJsonObject tempRoomObj = rootObj.value(QStringLiteral("temp_room")).toObject();
+                        
+                        // 构建临时房间信息
+                        TempRoomInfo tempRoomInfo;
+                        tempRoomInfo.room_id = tempRoomObj.value(QStringLiteral("room_id")).toString();
+                        tempRoomInfo.whip_url = tempRoomObj.value(QStringLiteral("whip_url")).toString();
+                        tempRoomInfo.whep_url = tempRoomObj.value(QStringLiteral("whep_url")).toString();
+                        tempRoomInfo.stream_name = tempRoomObj.value(QStringLiteral("stream_name")).toString();
+                        tempRoomInfo.group_id = groupId;
+                        tempRoomInfo.owner_id = tempRoomObj.value(QStringLiteral("owner_id")).toString();
+                        tempRoomInfo.owner_name = tempRoomObj.value(QStringLiteral("owner_name")).toString();
+                        tempRoomInfo.owner_icon = tempRoomObj.value(QStringLiteral("owner_icon")).toString();
+                        
+                        // 保存到全局存储
+                        TempRoomStorage::saveTempRoomInfo(groupId, tempRoomInfo);
+                        
+                        qDebug() << "已保存临时房间信息到全局存储：";
+                        qDebug() << "  群组ID:" << groupId;
+                        qDebug() << "  房间ID:" << tempRoomInfo.room_id;
+                        qDebug() << "  推流地址:" << tempRoomInfo.whip_url;
+                        qDebug() << "  拉流地址:" << tempRoomInfo.whep_url;
+                        qDebug() << "  流名称:" << tempRoomInfo.stream_name;
+                    }
+                    
+                    // 显示成功消息
+                    QString finalMessage = message.isEmpty() ? QString::fromUtf8(u8"群组创建成功！") : message;
+                    if (!groupId.isEmpty()) {
+                        finalMessage = QString("%1\n群组ID: %2").arg(finalMessage, groupId);
+                    }
+                    CustomMessageDialog::showMessage(this, QString::fromUtf8(u8"创建群组成功"), finalMessage);
+                    
+                    // 发出群组创建成功信号，通知父窗口刷新群列表
+                    emit groupCreated(groupId);
+                } else {
+                    // 检查是否有错误信息
+                    QString errorMsg = rootObj.value(QStringLiteral("error")).toString();
+                    if (errorMsg.isEmpty()) {
+                        errorMsg = rootObj.value(QStringLiteral("message")).toString();
+                    }
+                    if (errorMsg.isEmpty()) {
+                        errorMsg = QString::fromUtf8(u8"创建群组失败：未知错误");
+                    }
+                    CustomMessageDialog::showMessage(this, QString::fromUtf8(u8"创建群组失败"), errorMsg);
+                }
+                return;
+            }
+            
+            // 其他消息按原逻辑处理
             m_NoticeMsg.push_back(msg);
             // m_scheduleDlg 已移至 FriendGroupDialog 中管理，通知处理移至 FriendGroupDialog
         }
@@ -764,7 +875,7 @@ private:
         }
     }
     
-    // 通过业务服务器创建群组（由服务器调用腾讯IM）
+    // 通过WebSocket创建群组（由服务器调用腾讯IM并自动创建临时语音房间）
     void createGroupWithTIMSDK(const QString& groupName, const QString& teacherUniqueId, const QString teacher_name,
                                const QString& classUniqueId, const UserInfo& userinfo) {
         QString normalizedName = groupName.trimmed();
@@ -778,237 +889,92 @@ private:
             return;
         }
 
-        QString customGroupId = classUniqueId + "01";
-
-        QJsonObject groupObj;
-        groupObj["group_id"] = customGroupId;
-        groupObj["detail_group_id"] = customGroupId;
-        groupObj["group_name"] = normalizedName;
-        groupObj["detail_group_name"] = normalizedName;
-        groupObj["group_type"] = kTIMGroup_Public;
-        groupObj["detail_group_type"] = kTIMGroup_Private;
-        groupObj["headImage_path"] = "/images/img_group.png";
-        groupObj["detail_face_url"] = "";
-        groupObj["intro"] = QString::fromUtf8(u8"班级群：%1").arg(normalizedName);
-        groupObj["introduction"] = QString::fromUtf8(u8"班级群：%1").arg(normalizedName);
-        groupObj["notification"] = QString::fromUtf8(u8"欢迎加入%1").arg(normalizedName);
-        groupObj["type"] = "3";
-        groupObj["permission_level"] = 1;
-        groupObj["owner_id"] = userinfo.teacher_unique_id;
-        groupObj["owner_name"] = userinfo.strName;
-        groupObj["school_id"] = userinfo.schoolId;
-        groupObj["class_id"] = classUniqueId;
-        groupObj["classid"] = classUniqueId;
-        groupObj["schoolid"] = userinfo.schoolId;
-        groupObj["custom_group_id"] = customGroupId;
-        groupObj["is_class_group"] = 1;
-        groupObj["add_option"] = kTIMGroupAddOpt_Any;
-        groupObj["detail_is_shutup_all"] = false;
-        groupObj["is_shutup_all"] = false;
-        groupObj["visible"] = 2;
-        groupObj["searchable"] = 2;
-        groupObj["max_member_num"] = 2000;
-        groupObj["member_num"] = teacherUniqueId.isEmpty() || teacherUniqueId == userinfo.teacher_unique_id ? 1 : 2;
-        groupObj["online_member_num"] = 0;
-        qint64 nowTs = QDateTime::currentDateTime().toSecsSinceEpoch();
-        groupObj["create_time"] = nowTs;
-        groupObj["detail_info_seq"] = 0;
-        groupObj["info_seq"] = 0;
-        groupObj["latest_seq"] = 0;
-        groupObj["last_info_time"] = nowTs;
-        groupObj["last_msg_time"] = 0;
-        groupObj["next_msg_seq"] = 0;
-
-        QJsonArray members;
-        QJsonObject ownerMember;
-        ownerMember["unique_member_id"] = userinfo.teacher_unique_id;
-        ownerMember["member_name"] = userinfo.strName;
-        ownerMember["group_role"] = 400; // 群主
-        members.append(ownerMember);
-
-        if (!teacherUniqueId.isEmpty() && teacherUniqueId != userinfo.teacher_unique_id) {
-            QJsonObject teacherMember;
-            teacherMember["unique_member_id"] = teacherUniqueId;
-            teacherMember["member_name"] = teacher_name;
-            teacherMember["group_role"] = 300; // 管理员
-            members.append(teacherMember);
+        if (!m_pWs) {
+            CustomMessageDialog::showMessage(this, QString::fromUtf8(u8"错误"), QString::fromUtf8(u8"WebSocket未连接，无法创建群组"));
+            return;
         }
-        groupObj["members"] = members;
 
+        qint64 nowTs = QDateTime::currentDateTime().toSecsSinceEpoch();
+
+        // 构建WebSocket消息（按照服务器要求的格式）
+        QJsonObject wsMessage;
+        wsMessage["type"] = "3";  // 创建群组消息类型
+
+        // ========== 群组基本信息（必需） ==========
+        wsMessage["group_name"] = normalizedName;
+        wsMessage["group_type"] = "Meeting";  // 会议群
+        wsMessage["owner_identifier"] = userinfo.classId;  // 创建者ID
+
+        // ========== 班级信息（必需，用于创建班级群） ==========
+        wsMessage["classid"] = classUniqueId;
+        wsMessage["schoolid"] = userinfo.schoolId;
+        wsMessage["is_class_group"] = 1;  // 1=班级群
+        // 班级群唯一ID = 班级唯一ID + "01"
+        QString classGroupUniqueId = classUniqueId + "01";
+        wsMessage["group_id"] = classGroupUniqueId;
+        qDebug() << "创建班级群 - 班级唯一ID:" << classUniqueId << "，班级群唯一ID:" << classGroupUniqueId;
+
+        // ========== 群组详细信息（可选） ==========
+        wsMessage["face_url"] = "/images/img_group.png";
+        wsMessage["introduction"] = QString::fromUtf8(u8"班级群：%1").arg(normalizedName);
+        wsMessage["notification"] = QString::fromUtf8(u8"欢迎加入%1").arg(normalizedName);
+        wsMessage["max_member_num"] = 2000;
+        wsMessage["searchable"] = 1;  // 可搜索
+        wsMessage["visible"] = 1;  // 可见
+        wsMessage["add_option"] = 0;  // 加群选项
+
+        // ========== 群主信息（必需） ==========
         QJsonObject memberInfo;
-        memberInfo["user_id"] = userinfo.teacher_unique_id;
+        memberInfo["user_id"] = userinfo.classId;
         memberInfo["user_name"] = userinfo.strName;
-        memberInfo["self_role"] = 400;
-        memberInfo["readed_seq"] = 0;
+        memberInfo["self_role"] = 400;  // 400=群主
+        memberInfo["join_time"] = nowTs;
         memberInfo["msg_flag"] = 0;
         memberInfo["self_msg_flag"] = 0;
+        memberInfo["readed_seq"] = 0;
         memberInfo["unread_num"] = 0;
-        memberInfo["join_time"] = nowTs;
-        groupObj["member_info"] = memberInfo;
+        wsMessage["member_info"] = memberInfo;
 
-        QJsonArray groupsArray;
-        groupsArray.append(groupObj);
+        // ========== 其他成员信息（可选，管理员等） ==========
+        QJsonArray members;
+        if (!teacherUniqueId.isEmpty() && teacherUniqueId != userinfo.classId) {
+            QJsonObject teacherMember;
+            teacherMember["user_id"] = teacherUniqueId;  // 使用新字段名
+            teacherMember["user_name"] = teacher_name;  // 使用新字段名
+            teacherMember["group_role"] = 300;  // 300=管理员
+            teacherMember["join_time"] = nowTs;
+            teacherMember["msg_flag"] = 0;
+            teacherMember["self_msg_flag"] = 0;
+            teacherMember["readed_seq"] = 0;
+            teacherMember["unread_num"] = 0;
+            members.append(teacherMember);
+        }
+        if (!members.isEmpty()) {
+            wsMessage["members"] = members;
+        }
 
-        QJsonObject requestObj;
-        requestObj["user_id"] = userinfo.teacher_unique_id;
-        requestObj["class_id"] = classUniqueId;
-        requestObj["classid"] = classUniqueId;
-        requestObj["school_id"] = userinfo.schoolId;
-        requestObj["schoolid"] = userinfo.schoolId;
-        requestObj["groups"] = groupsArray;
+        // ========== 创建者额外信息（可选，用于临时语音群） ==========
+        wsMessage["owner_name"] = userinfo.strName;
+        if (!userinfo.strHeadImagePath.isEmpty()) {
+            wsMessage["owner_icon"] = userinfo.strHeadImagePath;
+        } else if (!userinfo.avatar.isEmpty()) {
+            wsMessage["owner_icon"] = userinfo.avatar;
+        }
 
-        QJsonDocument requestDoc(requestObj);
-        QByteArray jsonData = requestDoc.toJson(QJsonDocument::Compact);
+        // 转换为JSON字符串
+        QJsonDocument doc(wsMessage);
+        QString jsonString = QString::fromUtf8(doc.toJson(QJsonDocument::Compact));
 
-        const QString url = QStringLiteral("http://47.100.126.194:5000/groups/sync");
-        qDebug() << "========== 创建群组 - 请求服务器 ==========";
-        qDebug() << "URL:" << url;
-        qDebug() << "Payload:" << QString::fromUtf8(jsonData);
+        qDebug() << "========== 通过WebSocket创建群组 ==========";
+        qDebug() << "消息内容:" << jsonString;
 
-        TAHttpHandler* createHandler = new TAHttpHandler(this);
-        QPointer<ClassTeacherDialog> self = this;
-        auto cleanup = [createHandler]() {
-            if (createHandler) {
-                createHandler->deleteLater();
-            }
-        };
+        // 通过WebSocket发送消息，格式：to:目标ID:消息
+        // 创建班级群不需要目标ID，使用 to::消息 格式（两个冒号，中间为空）
+        QString message = QString("to::%1").arg(jsonString);
+        TaQTWebSocket::sendPrivateMessage(message);
 
-        auto parseGroupId = [](const QJsonObject& obj) -> QString {
-            auto extractFromObject = [](const QJsonObject& source) -> QString {
-                if (source.contains("group_id")) {
-                    return source.value("group_id").toString();
-                }
-                if (source.contains("groupId")) {
-                    return source.value("groupId").toString();
-                }
-                if (source.contains("GroupId")) {
-                    return source.value("GroupId").toString();
-                }
-                return QString();
-            };
-
-            QString id = extractFromObject(obj);
-            if (!id.isEmpty()) {
-                return id;
-            }
-            if (obj.contains("data") && obj.value("data").isObject()) {
-                QJsonObject dataObj = obj.value("data").toObject();
-                id = extractFromObject(dataObj);
-                if (!id.isEmpty()) {
-                    return id;
-                }
-                if (dataObj.contains("tencent_sync") && dataObj.value("tencent_sync").isObject()) {
-                    QJsonObject syncObj = dataObj.value("tencent_sync").toObject();
-                    if (syncObj.contains("results") && syncObj.value("results").isArray()) {
-                        QJsonArray results = syncObj.value("results").toArray();
-                        for (const QJsonValue& val : results) {
-                            if (!val.isObject()) continue;
-                            QJsonObject resultObj = val.toObject();
-                            id = extractFromObject(resultObj);
-                            if (!id.isEmpty()) {
-                                return id;
-                            }
-                            if (resultObj.contains("response") && resultObj.value("response").isObject()) {
-                                id = extractFromObject(resultObj.value("response").toObject());
-                                if (!id.isEmpty()) {
-                                    return id;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            if (obj.contains("result") && obj.value("result").isObject()) {
-                QJsonObject resultObj = obj.value("result").toObject();
-                id = extractFromObject(resultObj);
-                if (!id.isEmpty()) {
-                    return id;
-                }
-            }
-            return QString();
-        };
-
-        connect(createHandler, &TAHttpHandler::success, this, [=](const QString& responseString) {
-            qDebug() << "创建群组服务器响应:" << responseString;
-            QString serverMessage = QString::fromUtf8(u8"群组创建成功！");
-            QString groupIdFromServer;
-            bool businessSuccess = false;
-
-            QJsonDocument respDoc = QJsonDocument::fromJson(responseString.toUtf8());
-            if (respDoc.isObject()) {
-                QJsonObject obj = respDoc.object();
-                QJsonObject dataObj;
-                if (obj.contains("data") && obj.value("data").isObject()) {
-                    dataObj = obj.value("data").toObject();
-                }
-
-                auto tryReadMessage = [&](const QJsonObject& source) {
-                    if (source.contains("message") && source.value("message").isString()) {
-                        serverMessage = source.value("message").toString();
-                    }
-                };
-                tryReadMessage(obj);
-                if (!dataObj.isEmpty()) {
-                    tryReadMessage(dataObj);
-                }
-
-                auto tryReadCode = [&](const QJsonObject& source) {
-                    if (source.contains("code")) {
-                        int code = source.value("code").toInt(-1);
-                        if (code != -1) {
-                            businessSuccess = businessSuccess || (code == 0 || code == 200);
-                        }
-                    }
-                };
-                tryReadCode(obj);
-                if (!dataObj.isEmpty()) {
-                    tryReadCode(dataObj);
-                }
-
-                if (obj.contains("success") && obj.value("success").isBool()) {
-                    businessSuccess = businessSuccess || obj.value("success").toBool();
-                }
-                if (!dataObj.isEmpty() && dataObj.contains("success_count")) {
-                    int successCount = dataObj.value("success_count").toInt(0);
-                    int errorCount = dataObj.value("error_count").toInt(0);
-                    businessSuccess = businessSuccess || (successCount > 0 && errorCount == 0);
-                }
-                if (!businessSuccess && obj.contains("status") && obj.value("status").isBool()) {
-                    businessSuccess = obj.value("status").toBool();
-                }
-
-                groupIdFromServer = parseGroupId(obj);
-            } else {
-                businessSuccess = true; // 非JSON响应但HTTP成功，视为成功
-            }
-
-            if (!businessSuccess) {
-                CustomMessageDialog::showMessage(self, QString::fromUtf8(u8"创建群组失败"), serverMessage);
-                cleanup();
-                return;
-            }
-
-            if (groupIdFromServer.isEmpty()) {
-                groupIdFromServer = customGroupId;
-            }
-
-            QString finalMessage = serverMessage;
-            if (!groupIdFromServer.isEmpty()) {
-                finalMessage = QString("%1\n群组ID: %2").arg(serverMessage, groupIdFromServer);
-            }
-            CustomMessageDialog::showMessage(self, QString::fromUtf8(u8"创建群组成功"), finalMessage);
-
-            // 再次同步群组信息，确保本地与服务器保持一致（可根据需要保留/移除）
-            cleanup();
-        });
-
-        connect(createHandler, &TAHttpHandler::failed, this, [=](const QString& error) {
-            QString errorText = error.isEmpty() ? QString::fromUtf8(u8"创建群组请求失败") : error;
-            CustomMessageDialog::showMessage(self, QString::fromUtf8(u8"创建群组失败"), errorText);
-            cleanup();
-        });
-
-        createHandler->post(url, jsonData);
+        qDebug() << "已通过WebSocket发送创建群组消息，格式: to::消息内容";
+        // 注意：返回消息会在 onWebSocketMessage 中处理
     }
     
     // 上传群组信息到服务器
@@ -1041,13 +1007,13 @@ private:
         groupObj["next_msg_seq"] = 0;
         // 计算成员数量：群主 + 被邀请的教师（如果有）
         int memberCount = 1; // 只有群主
-        if (teacherUniqueId != userinfo.teacher_unique_id && !teacherUniqueId.isEmpty()) {
+        if (teacherUniqueId != userinfo.classId && !teacherUniqueId.isEmpty()) {
             memberCount = 2; // 群主 + 被邀请的教师
         }
         groupObj["member_num"] = memberCount;
         groupObj["max_member_num"] = 2000;
         groupObj["online_member_num"] = 0;
-        groupObj["owner_identifier"] = userinfo.teacher_unique_id; // 群主ID
+        groupObj["owner_identifier"] = userinfo.classId; // 群主ID
         groupObj["add_option"] = kTIMGroupAddOpt_Any;
         groupObj["visible"] = 2; // 默认可见
         groupObj["searchable"] = 2; // 默认可搜索
@@ -1066,7 +1032,7 @@ private:
         // 用户在该群组中的信息（当前登录用户的信息，即群主信息）
         // 注意：member_info 是当前用户（上传者）在该群组中的信息
         QJsonObject memberInfo;
-        memberInfo["user_id"] = userinfo.teacher_unique_id; // 当前用户的ID（群主）
+        memberInfo["user_id"] = userinfo.classId; // 当前用户的ID（群主）
         memberInfo["readed_seq"] = 0; // 刚创建群组，已读消息序列号为0
         memberInfo["msg_flag"] = 0; // 消息接收选项，默认为0
         memberInfo["join_time"] = QDateTime::currentDateTime().toSecsSinceEpoch(); // 加入时间（创建时间）
@@ -1083,7 +1049,7 @@ private:
         
         // 构造最终的上传JSON（当前用户/群主）
         QJsonObject uploadData;
-        uploadData["user_id"] = userinfo.teacher_unique_id; // 当前用户的ID（群主）
+        uploadData["classId"] = userinfo.classId; // 当前用户的ID（群主）
         uploadData["groups"] = groupsArray;
         
         // 转换为JSON字符串
@@ -1122,7 +1088,7 @@ private:
         
         // 如果有被邀请的成员，也需要为被邀请的成员创建群组信息并上传
         // 现在创建群组时会添加被邀请的教师作为管理员
-        if (teacherUniqueId != userinfo.teacher_unique_id && !teacherUniqueId.isEmpty()) {
+        if (teacherUniqueId != userinfo.classId && !teacherUniqueId.isEmpty()) {
             // 为被邀请的成员创建群组信息对象
             QJsonObject invitedGroupObj = groupObj; // 复制群组基本信息
             

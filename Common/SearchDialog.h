@@ -20,10 +20,332 @@
 #include <QInputDialog>
 #include <QMessageBox>
 #include <QDateTime>
+#include <QMouseEvent>
+#include <QPoint>
+#include <QEvent>
+#include <QResizeEvent>
 #include "TAHttpHandler.h"
 #include "CommonInfo.h"
 #include "ImSDK/includes/TIMCloud.h"
 #include "ImSDK/includes/TIMCloudDef.h"
+
+// 自定义输入对话框类（类似SearchDialog样式，无标题栏）
+class SearchInputDialog : public QDialog
+{
+    Q_OBJECT
+public:
+    explicit SearchInputDialog(QWidget* parent = nullptr) : QDialog(parent)
+    {
+        // 去掉标题栏
+        setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
+        setModal(true);
+        resize(400, 180);
+        
+        // 设置窗口背景色和圆角
+        setStyleSheet(
+            "QDialog { background-color: #565656; border-radius: 20px; } "
+            "QLabel { background-color: #565656; color: #f5f5f5; } "
+            "QLineEdit { background-color: #454545; color: #f5f5f5; border-radius: 15px; padding: 6px; } "
+            "QPushButton { background-color: #454545; color: #f5f5f5; border-radius: 15px; } "
+        );
+        
+        QVBoxLayout* mainLayout = new QVBoxLayout(this);
+        mainLayout->setContentsMargins(20, 20, 20, 20);
+        mainLayout->setSpacing(15);
+        
+        // 标题标签
+        m_titleLabel = new QLabel("输入", this);
+        m_titleLabel->setStyleSheet("background-color: #565656; color: #f5f5f5; font-size: 18px; font-weight: bold;");
+        m_titleLabel->setAlignment(Qt::AlignCenter);
+        mainLayout->addWidget(m_titleLabel);
+        
+        // 提示标签
+        m_promptLabel = new QLabel("", this);
+        m_promptLabel->setStyleSheet("background-color: #565656; color: #f5f5f5; font-size: 14px;");
+        m_promptLabel->setWordWrap(true);
+        mainLayout->addWidget(m_promptLabel);
+        
+        // 输入框
+        m_lineEdit = new QLineEdit(this);
+        m_lineEdit->setStyleSheet("background-color: #454545; color: #f5f5f5; border-radius: 15px; padding: 6px;");
+        mainLayout->addWidget(m_lineEdit);
+        
+        // 按钮布局
+        QHBoxLayout* buttonLayout = new QHBoxLayout;
+        buttonLayout->addStretch();
+        
+        m_okButton = new QPushButton("确定", this);
+        m_okButton->setFixedSize(80, 35);
+        m_okButton->setStyleSheet("background-color: #454545; color: #f5f5f5; padding: 6px 12px; border-radius: 15px; font-weight: bold;");
+        connect(m_okButton, &QPushButton::clicked, this, &QDialog::accept);
+        buttonLayout->addWidget(m_okButton);
+        
+        m_cancelButton = new QPushButton("取消", this);
+        m_cancelButton->setFixedSize(80, 35);
+        m_cancelButton->setStyleSheet("background-color: #454545; color: #f5f5f5; padding: 6px 12px; border-radius: 15px; font-weight: bold;");
+        connect(m_cancelButton, &QPushButton::clicked, this, &QDialog::reject);
+        buttonLayout->addWidget(m_cancelButton);
+        
+        buttonLayout->addStretch();
+        mainLayout->addLayout(buttonLayout);
+        
+        // 关闭按钮（鼠标移入显示）
+        m_closeButton = new QPushButton("×", this);
+        m_closeButton->setFixedSize(30, 30);
+        m_closeButton->setStyleSheet(
+            "QPushButton { "
+            "background-color: #707070; "
+            "color: #f5f5f5; "
+            "border: none; "
+            "border-radius: 15px; "
+            "font-size: 20px; "
+            "font-weight: bold; "
+            "} "
+            "QPushButton:hover { "
+            "background-color: #ff4444; "
+            "}"
+        );
+        m_closeButton->move(width() - 35, 5);
+        m_closeButton->hide();
+        connect(m_closeButton, &QPushButton::clicked, this, &QDialog::reject);
+        
+        // 初始化拖动
+        m_dragging = false;
+        m_dragStartPos = QPoint();
+        
+        // 连接回车键
+        connect(m_lineEdit, &QLineEdit::returnPressed, this, &QDialog::accept);
+    }
+    
+    void setTitle(const QString& title) {
+        if (m_titleLabel) {
+            m_titleLabel->setText(title);
+        }
+    }
+    
+    void setPrompt(const QString& prompt) {
+        if (m_promptLabel) {
+            m_promptLabel->setText(prompt);
+        }
+    }
+    
+    void setText(const QString& text) {
+        if (m_lineEdit) {
+            m_lineEdit->setText(text);
+        }
+    }
+    
+    QString text() const {
+        return m_lineEdit ? m_lineEdit->text() : QString();
+    }
+    
+    static QString getText(QWidget* parent, const QString& title, const QString& prompt, 
+                          const QString& defaultValue = "", bool* ok = nullptr)
+    {
+        SearchInputDialog dlg(parent);
+        dlg.setTitle(title);
+        dlg.setPrompt(prompt);
+        dlg.setText(defaultValue);
+        
+        int result = dlg.exec();
+        if (ok) {
+            *ok = (result == QDialog::Accepted);
+        }
+        
+        return result == QDialog::Accepted ? dlg.text() : QString();
+    }
+    
+protected:
+    void mousePressEvent(QMouseEvent* event) override {
+        if (event->button() == Qt::LeftButton) {
+            m_dragging = true;
+            m_dragStartPos = event->globalPos() - frameGeometry().topLeft();
+            event->accept();
+        }
+    }
+    
+    void mouseMoveEvent(QMouseEvent* event) override {
+        if (m_dragging && (event->buttons() & Qt::LeftButton)) {
+            move(event->globalPos() - m_dragStartPos);
+            event->accept();
+        }
+    }
+    
+    void mouseReleaseEvent(QMouseEvent* event) override {
+        if (event->button() == Qt::LeftButton) {
+            m_dragging = false;
+            event->accept();
+        }
+    }
+    
+    void enterEvent(QEvent* event) override {
+        if (m_closeButton) {
+            m_closeButton->show();
+        }
+        QDialog::enterEvent(event);
+    }
+    
+    void leaveEvent(QEvent* event) override {
+        if (m_closeButton) {
+            m_closeButton->hide();
+        }
+        QDialog::leaveEvent(event);
+    }
+    
+    void resizeEvent(QResizeEvent* event) override {
+        QDialog::resizeEvent(event);
+        if (m_closeButton) {
+            m_closeButton->move(width() - 35, 5);
+        }
+    }
+    
+private:
+    QLabel* m_titleLabel = nullptr;
+    QLabel* m_promptLabel = nullptr;
+    QLineEdit* m_lineEdit = nullptr;
+    QPushButton* m_okButton = nullptr;
+    QPushButton* m_cancelButton = nullptr;
+    QPushButton* m_closeButton = nullptr;
+    bool m_dragging = false;
+    QPoint m_dragStartPos;
+};
+
+// 自定义消息对话框类（类似SearchDialog样式）
+class SearchMessageDialog : public QDialog
+{
+    Q_OBJECT
+public:
+    explicit SearchMessageDialog(QWidget* parent = nullptr) : QDialog(parent)
+    {
+        // 去掉标题栏
+        setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
+        setModal(true);
+        resize(400, 200);
+        
+        // 设置窗口背景色和圆角
+        setStyleSheet(
+            "QDialog { background-color: #565656; border-radius: 20px; } "
+            "QLabel { background-color: #565656; color: #f5f5f5; } "
+            "QPushButton { background-color: #454545; color: #f5f5f5; border-radius: 15px; } "
+        );
+        
+        QVBoxLayout* mainLayout = new QVBoxLayout(this);
+        mainLayout->setContentsMargins(20, 20, 20, 20);
+        mainLayout->setSpacing(15);
+        
+        // 标题标签
+        m_titleLabel = new QLabel("提示", this);
+        m_titleLabel->setStyleSheet("background-color: #565656; color: #f5f5f5; font-size: 18px; font-weight: bold;");
+        m_titleLabel->setAlignment(Qt::AlignCenter);
+        mainLayout->addWidget(m_titleLabel);
+        
+        // 消息标签
+        m_messageLabel = new QLabel("", this);
+        m_messageLabel->setStyleSheet("background-color: #565656; color: #f5f5f5; font-size: 14px;");
+        m_messageLabel->setWordWrap(true);
+        m_messageLabel->setAlignment(Qt::AlignCenter);
+        mainLayout->addWidget(m_messageLabel);
+        
+        // 确定按钮
+        QHBoxLayout* buttonLayout = new QHBoxLayout;
+        buttonLayout->addStretch();
+        m_okButton = new QPushButton("确定", this);
+        m_okButton->setFixedSize(100, 35);
+        m_okButton->setStyleSheet("background-color: #454545; color: #f5f5f5; padding: 6px 12px; border-radius: 15px; font-weight: bold;");
+        connect(m_okButton, &QPushButton::clicked, this, &QDialog::accept);
+        buttonLayout->addWidget(m_okButton);
+        buttonLayout->addStretch();
+        mainLayout->addLayout(buttonLayout);
+        
+        // 关闭按钮（鼠标移入显示）
+        m_closeButton = new QPushButton("×", this);
+        m_closeButton->setFixedSize(30, 30);
+        m_closeButton->setStyleSheet(
+            "QPushButton { "
+            "background-color: #707070; "
+            "color: #f5f5f5; "
+            "border: none; "
+            "border-radius: 15px; "
+            "font-size: 20px; "
+            "font-weight: bold; "
+            "} "
+            "QPushButton:hover { "
+            "background-color: #ff4444; "
+            "}"
+        );
+        m_closeButton->move(width() - 35, 5);
+        m_closeButton->hide();
+        connect(m_closeButton, &QPushButton::clicked, this, &QDialog::close);
+        
+        // 初始化拖动
+        m_dragging = false;
+        m_dragStartPos = QPoint();
+    }
+    
+    void setTitle(const QString& title) {
+        if (m_titleLabel) {
+            m_titleLabel->setText(title);
+        }
+    }
+    
+    void setMessage(const QString& message) {
+        if (m_messageLabel) {
+            m_messageLabel->setText(message);
+        }
+    }
+    
+protected:
+    void mousePressEvent(QMouseEvent* event) override {
+        if (event->button() == Qt::LeftButton) {
+            m_dragging = true;
+            m_dragStartPos = event->globalPos() - frameGeometry().topLeft();
+            event->accept();
+        }
+    }
+    
+    void mouseMoveEvent(QMouseEvent* event) override {
+        if (m_dragging && (event->buttons() & Qt::LeftButton)) {
+            move(event->globalPos() - m_dragStartPos);
+            event->accept();
+        }
+    }
+    
+    void mouseReleaseEvent(QMouseEvent* event) override {
+        if (event->button() == Qt::LeftButton) {
+            m_dragging = false;
+            event->accept();
+        }
+    }
+    
+    void enterEvent(QEvent* event) override {
+        if (m_closeButton) {
+            m_closeButton->show();
+        }
+        QDialog::enterEvent(event);
+    }
+    
+    void leaveEvent(QEvent* event) override {
+        if (m_closeButton) {
+            m_closeButton->hide();
+        }
+        QDialog::leaveEvent(event);
+    }
+    
+    void resizeEvent(QResizeEvent* event) override {
+        QDialog::resizeEvent(event);
+        if (m_closeButton) {
+            m_closeButton->move(width() - 35, 5);
+        }
+    }
+    
+private:
+    QLabel* m_titleLabel = nullptr;
+    QLabel* m_messageLabel = nullptr;
+    QPushButton* m_okButton = nullptr;
+    QPushButton* m_closeButton = nullptr;
+    bool m_dragging = false;
+    QPoint m_dragStartPos;
+};
 
 class SearchDialog : public QDialog
 {
@@ -33,6 +355,24 @@ public:
     {
         setWindowTitle("查找班级/教师/群");
         resize(500, 600);
+        
+        // 去掉标题栏
+        setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
+        
+        // 设置窗口背景色和圆角，以及所有控件的背景色
+        setStyleSheet(
+            "QDialog { background-color: #565656; border-radius: 20px; } "
+            "QWidget { background-color: #565656; } "
+            "QLabel { background-color: #565656; } "
+            "QLineEdit { background-color: #565656; } "
+            "QPushButton { background-color: #454545; } "
+            "QScrollArea { background-color: #565656; } "
+            "QFrame { background-color: #565656; } "
+            "QScrollBar:vertical { background-color: #565656; } "
+            "QScrollBar:horizontal { background-color: #565656; } "
+            "QScrollBar::handle:vertical { background-color: #707070; } "
+            "QScrollBar::handle:horizontal { background-color: #707070; } "
+        );
 
         // 初始化HTTP处理器
         m_httpHandler = new TAHttpHandler(this);
@@ -55,22 +395,47 @@ public:
             });
         }
 
+        // 初始化拖动相关变量
+        m_dragging = false;
+        m_dragStartPos = QPoint();
+
+        // 创建关闭按钮
+        m_closeButton = new QPushButton("×", this);
+        m_closeButton->setFixedSize(30, 30);
+        m_closeButton->setStyleSheet(
+            "QPushButton { "
+            "background-color: #707070; "
+            "color: #f5f5f5; "
+            "border: none; "
+            "border-radius: 15px; "
+            "font-size: 20px; "
+            "font-weight: bold; "
+            "} "
+            "QPushButton:hover { "
+            "background-color: #ff4444; "
+            "}"
+        );
+        m_closeButton->move(width() - 35, 5);
+        m_closeButton->hide(); // 初始隐藏
+        connect(m_closeButton, &QPushButton::clicked, this, &QDialog::close);
+
         // 整体布局
         QVBoxLayout* mainLayout = new QVBoxLayout(this);
 
         // 顶部数字标签
-        m_lblNum = new QLabel("0");
+        m_lblNum = new QLabel("");
         m_lblNum->setAlignment(Qt::AlignCenter);
         m_lblNum->setFixedSize(30, 30);
-        m_lblNum->setStyleSheet("background-color: yellow; color: red; font-weight: bold; font-size: 16px; border-radius: 15px;");
+        m_lblNum->setStyleSheet("background-color: #565656; color: #f5f5f5; font-weight: bold; font-size: 16px; border-radius: 15px;");
         mainLayout->addWidget(m_lblNum, 0, Qt::AlignCenter);
 
         // 搜索栏
         QHBoxLayout* searchLayout = new QHBoxLayout;
         m_editSearch = new QLineEdit;
         m_editSearch->setPlaceholderText("输入群ID或群名称");
+        m_editSearch->setStyleSheet("background-color: #454545; color: #f5f5f5; padding: 6px; border-radius: 15px;");
         QPushButton* btnSearch = new QPushButton("搜索");
-        btnSearch->setStyleSheet("background-color: blue; color: white; padding: 6px 12px;");
+        btnSearch->setStyleSheet("background-color: #454545; color: #f5f5f5; padding: 6px 12px; border-radius: 15px;");
         searchLayout->addWidget(m_editSearch);
         searchLayout->addWidget(btnSearch);
         mainLayout->addLayout(searchLayout);
@@ -87,11 +452,11 @@ public:
         QPushButton* btnTeacher = new QPushButton("教师");
         QPushButton* btnGroup = new QPushButton("群");
 
-        QString greenStyle = "background-color: lightgreen; color: black; padding: 6px 12px; font-weight: bold;";
-        btnAll->setStyleSheet(greenStyle);
-        btnClass->setStyleSheet(greenStyle);
-        btnTeacher->setStyleSheet(greenStyle);
-        btnGroup->setStyleSheet(greenStyle);
+        QString buttonStyle = "background-color: #454545; color: #f5f5f5; padding: 6px 12px; font-weight: bold; border-radius: 15px;";
+        btnAll->setStyleSheet(buttonStyle);
+        btnClass->setStyleSheet(buttonStyle);
+        btnTeacher->setStyleSheet(buttonStyle);
+        btnGroup->setStyleSheet(buttonStyle);
 
         filterLayout->addWidget(btnAll);
         filterLayout->addWidget(btnClass);
@@ -102,7 +467,9 @@ public:
         // 列表区域
         m_scrollArea = new QScrollArea;
         m_scrollArea->setWidgetResizable(true);
+        m_scrollArea->setStyleSheet("QScrollArea { background-color: #565656; }");
         m_listContainer = new QWidget;
+        m_listContainer->setStyleSheet("QWidget { background-color: #565656; }");
         m_listLayout = new QVBoxLayout(m_listContainer);
         m_listLayout->addStretch();
         m_scrollArea->setWidget(m_listContainer);
@@ -127,7 +494,7 @@ private slots:
 
         // 获取当前用户信息
         UserInfo userInfo = CommonInfo::GetData();
-        m_currentUserId = userInfo.teacher_unique_id;
+        m_currentUserId = userInfo.classId;
         if (userInfo.schoolId.isEmpty()) {
             qDebug() << "学校ID为空，无法搜索";
             return;
@@ -148,7 +515,7 @@ private slots:
         // 构建群组搜索URL
         QUrl groupUrl("http://47.100.126.194:5000/groups/search");
         QUrlQuery groupQuery;
-        groupQuery.addQueryItem("schoolid", userInfo.schoolId);
+        // 不再需要schoolid参数，现在不同的学校也可以查询
         if (searchType == "group_id") {
             groupQuery.addQueryItem("group_id", searchKey);
         } else {
@@ -165,7 +532,7 @@ private slots:
         // 构建教师搜索URL
         QUrl teacherUrl("http://47.100.126.194:5000/teachers/search");
         QUrlQuery teacherQuery;
-        teacherQuery.addQueryItem("schoolid", userInfo.schoolId);
+        // 不再需要schoolid参数，现在不同的学校也可以查询
         
         // 判断教师搜索类型：如果搜索键是纯数字，可能是teacher_unique_id；否则按name搜索
         bool isNumeric = false;
@@ -312,11 +679,11 @@ private slots:
     {
         // 通过/groups/by-teacher接口获取当前用户的群组列表
         UserInfo userInfo = CommonInfo::GetData();
-        if (m_httpHandler && !userInfo.teacher_unique_id.isEmpty())
+        if (m_httpHandler && !userInfo.classId.isEmpty())
         {
             QUrl url("http://47.100.126.194:5000/groups/by-teacher");
             QUrlQuery query;
-            query.addQueryItem("teacher_unique_id", userInfo.teacher_unique_id);
+            query.addQueryItem("classId", userInfo.classId);
             url.setQuery(query);
             
             // 使用临时标志来区分这个请求是用于加载已加入群组列表的
@@ -390,7 +757,7 @@ private slots:
     {
         // 获取当前用户信息
         UserInfo userInfo = CommonInfo::GetData();
-        QString userId = userInfo.teacher_unique_id; // 使用strUserId作为用户ID
+        QString userId = userInfo.classId; // 使用strUserId作为用户ID
         QString userName = userInfo.strName;
         
         if (userId.isEmpty() || userName.isEmpty()) {
@@ -400,9 +767,9 @@ private slots:
         
         // 弹出输入框让用户输入加入理由
         bool ok;
-        QString reason = QInputDialog::getText(this, "申请加入群组", 
+        QString reason = SearchInputDialog::getText(this, "申请加入群组", 
             QString("请输入加入群组 \"%1\" 的理由：").arg(groupName),
-            QLineEdit::Normal, "", &ok);
+            "", &ok);
         
         if (!ok || reason.isEmpty()) {
             return; // 用户取消或未输入理由
@@ -442,13 +809,18 @@ private slots:
                     dlg->sendJoinGroupRequestToServer(data->groupId, data->userId, data->userName, data->reason);
                     
                     // 显示成功消息
-                    QMessageBox::information(dlg, "申请成功", 
-                        QString("已成功申请加入群组 \"%1\"！\n等待管理员审核。").arg(data->groupName));
+                    SearchMessageDialog* msgDlg = new SearchMessageDialog(dlg);
+                    msgDlg->setTitle("申请成功");
+                    msgDlg->setMessage(QString("已成功申请加入群组 \"%1\"！\n等待管理员审核。").arg(data->groupName));
+                    msgDlg->exec();
                 } else {
                     QString errorDesc = QString::fromUtf8(desc ? desc : "未知错误");
                     QString errorMsg = QString("申请加入群组失败\n错误码: %1\n错误描述: %2").arg(code).arg(errorDesc);
                     qDebug() << errorMsg;
-                    QMessageBox::critical(dlg, "申请失败", errorMsg);
+                    SearchMessageDialog* msgDlg = new SearchMessageDialog(dlg);
+                    msgDlg->setTitle("申请失败");
+                    msgDlg->setMessage(errorMsg);
+                    msgDlg->exec();
                 }
                 
                 // 释放回调数据
@@ -525,13 +897,13 @@ private:
         QHBoxLayout* itemLayout = new QHBoxLayout;
         QLabel* avatar = new QLabel;
         avatar->setFixedSize(40, 40);
-        avatar->setStyleSheet("background-color: gray; border-radius: 20px;"); // 用灰色代替头像，可以换成 QPixmap 加载图片
+        avatar->setStyleSheet("background-color: #565656; border-radius: 20px;"); // 用灰色代替头像，可以换成 QPixmap 加载图片
 
         QVBoxLayout* infoLayout = new QVBoxLayout;
         QLabel* lblName = new QLabel(QString("%1  ⛔ %2人  %3").arg(name).arg(memberCount).arg(tag));
-        lblName->setStyleSheet("font-weight: bold;");
+        lblName->setStyleSheet("background-color: #565656; color: #f5f5f5; font-weight: bold;");
         QLabel* lblDesc = new QLabel(desc);
-        lblDesc->setStyleSheet("color: gray; font-size: 12px;");
+        lblDesc->setStyleSheet("background-color: #565656; color: #d3d3d3; font-size: 12px;");
         infoLayout->addWidget(lblName);
         infoLayout->addWidget(lblDesc);
 
@@ -547,11 +919,11 @@ private:
             if (isMember) {
                 // 已加入：灰化按钮，禁用
                 btnJoin->setEnabled(false);
-                btnJoin->setStyleSheet("background-color: gray; color: white; padding: 4px 8px;");
+                btnJoin->setStyleSheet("background-color: #454545; color: #d3d3d3; padding: 4px 8px; border-radius: 15px;");
             } else {
                 // 未加入：可点击
                 btnJoin->setEnabled(true);
-                btnJoin->setStyleSheet("background-color: lightblue; padding: 4px 8px;");
+                btnJoin->setStyleSheet("background-color: #454545; color: #f5f5f5; padding: 4px 8px; border-radius: 15px;");
                 
                 // 连接加入按钮点击事件
                 connect(btnJoin, &QPushButton::clicked, this, [=]() {
@@ -567,7 +939,59 @@ private:
         QFrame* frame = new QFrame;
         frame->setLayout(itemLayout);
         frame->setFrameShape(QFrame::HLine);
+        frame->setStyleSheet("QFrame { background-color: #565656; }");
         parent->insertWidget(parent->count() - 1, frame); // 在stretch之前插入
+    }
+
+protected:
+    void mousePressEvent(QMouseEvent* event) override
+    {
+        if (event->button() == Qt::LeftButton) {
+            m_dragging = true;
+            m_dragStartPos = event->globalPos() - frameGeometry().topLeft();
+            event->accept();
+        }
+    }
+
+    void mouseMoveEvent(QMouseEvent* event) override
+    {
+        if (m_dragging && (event->buttons() & Qt::LeftButton)) {
+            move(event->globalPos() - m_dragStartPos);
+            event->accept();
+        }
+    }
+
+    void mouseReleaseEvent(QMouseEvent* event) override
+    {
+        if (event->button() == Qt::LeftButton) {
+            m_dragging = false;
+            event->accept();
+        }
+    }
+
+    void enterEvent(QEvent* event) override
+    {
+        if (m_closeButton) {
+            m_closeButton->show();
+        }
+        QDialog::enterEvent(event);
+    }
+
+    void leaveEvent(QEvent* event) override
+    {
+        if (m_closeButton) {
+            m_closeButton->hide();
+        }
+        QDialog::leaveEvent(event);
+    }
+
+    void resizeEvent(QResizeEvent* event) override
+    {
+        QDialog::resizeEvent(event);
+        // 更新关闭按钮位置
+        if (m_closeButton) {
+            m_closeButton->move(width() - 35, 5);
+        }
     }
 
 private:
@@ -581,4 +1005,7 @@ private:
     QSet<QString> m_joinedGroupIds; // 已加入的群组ID集合
     int m_groupCount = 0; // 群组搜索结果数量
     int m_teacherCount = 0; // 教师搜索结果数量
+    bool m_dragging = false; // 是否正在拖动
+    QPoint m_dragStartPos; // 拖动起始位置
+    QPushButton* m_closeButton = nullptr; // 关闭按钮
 };

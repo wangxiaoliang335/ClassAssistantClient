@@ -69,27 +69,6 @@ TACAddGroupWidget1::TACAddGroupWidget1(QWidget *parent, TaQTWebSocket* pWs)
 		}
 	});
 
-	/*QPushButton* timeButton = new QPushButton("时间对话框", this);
-	layout->addWidget(timeButton);
-
-	QPushButton* classButton = new QPushButton("学校/班级", this);
-	layout->addWidget(classButton);
-
-	QPushButton* wallpaperButton = new QPushButton("壁纸", this);
-	layout->addWidget(wallpaperButton);
-
-	QPushButton* courseScheduleButton = new QPushButton("教师课程表", this);
-	layout->addWidget(courseScheduleButton);
-
-	QPushButton* tabelButton = new QPushButton("表格对话框", this);
-	layout->addWidget(tabelButton);
-
-	QPushButton* textButton = new QPushButton("文本对话框", this);
-	layout->addWidget(textButton);
-
-	QPushButton* imageButton = new QPushButton("图片对话框", this);
-	layout->addWidget(imageButton);*/
-
 	setLayout(layout);
 	resize(230, 380);
 

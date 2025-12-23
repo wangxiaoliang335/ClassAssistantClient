@@ -8,6 +8,8 @@
 #include <QDir>
 #include <QFile>
 #include <QDateTime>
+#include <QDate>
+#include <QApplication>
 #include <windows.h>
 #include <tchar.h>
 #include "TACMainDialog.h"
@@ -52,12 +54,50 @@ TACMainDialog::~TACMainDialog()
 //    heartbeatTimer->start(5000); // 每 5 秒一次
 //}
 
-void TACMainDialog::Init(QString qPhone, int user_id)
+void TACMainDialog::Init(QString classId, int user_id)
 {
     navBarWidget = new TACNavigationBarWidget(this);
     navBarWidget->visibleCloseButton(false);
 
+    if (InitSDK())
+    {
+        Login(classId.toStdString());
+    }
+
     m_ws = new TaQTWebSocket(this);
+    
+    // 连接家庭作业消息信号，缓存作业数据
+    connect(m_ws, &TaQTWebSocket::homeworkReceived, this, [=](const QJsonObject& homeworkData) {
+        // 响应消息：包含 status 字段
+        if (homeworkData.contains("status")) {
+            const QString status = homeworkData.value("status").toString();
+            const QString message = homeworkData.value("message").toString();
+            qDebug() << "作业发布响应:" << status << message;
+            return;
+        }
+
+        const QString dateStr = homeworkData.value("date").toString();
+        const QString subject = homeworkData.value("subject").toString().trimmed();
+        const QString content = homeworkData.value("content").toString().trimmed();
+        if (dateStr.isEmpty() || subject.isEmpty() || content.isEmpty()) {
+            return;
+        }
+
+        // 缓存作业数据：按日期聚合
+        m_homeworkByDate[dateStr][subject] = content;
+        qDebug() << "TACMainDialog: 收到作业消息，已缓存到日期:" << dateStr << "科目:" << subject;
+        
+        // 如果 homeworkViewDialog 已创建，更新其内容
+        if (homeworkViewDialog) {
+            QDate date = QDate::fromString(dateStr, "yyyy-MM-dd");
+            if (!date.isValid()) {
+                date = QDate::currentDate();
+            }
+            homeworkViewDialog->setDate(date);
+            homeworkViewDialog->setHomeworkContent(m_homeworkByDate.value(dateStr));
+        }
+    });
+    
     m_httpHandler = new TAHttpHandler(this);
     if (m_httpHandler)
     {
@@ -92,9 +132,23 @@ void TACMainDialog::Init(QString qPhone, int user_id)
                                 m_userInfo.strAddress = oUserInfo.at(0)["address"].toString();
                                 m_userInfo.strSchoolName = oUserInfo.at(0)["school_name"].toString();
                                 m_userInfo.strGradeLevel = oUserInfo.at(0)["grade_level"].toString();
-                                m_userInfo.strGrade = oUserInfo.at(0)["grade"].toString();
-                                m_userInfo.strSubject = oUserInfo.at(0)["subject"].toString();
-                                m_userInfo.strClassTaught = oUserInfo.at(0)["class_taught"].toString();
+                                // 任教信息：优先读 teachings 数组（新模型）；旧字段不再作为任教信息来源
+                                if (oUserInfo.at(0).isObject() && oUserInfo.at(0).toObject().contains("teachings") && oUserInfo.at(0).toObject().value("teachings").isArray()) {
+                                    QJsonArray teachingsArr = oUserInfo.at(0).toObject().value("teachings").toArray();
+                                    m_userInfo.teachings.clear();
+                                    for (const QJsonValue& v : teachingsArr) {
+                                        if (!v.isObject()) continue;
+                                        QJsonObject t = v.toObject();
+                                        UserTeachingInfo info;
+                                        info.grade_level = t.value("grade_level").toString();
+                                        info.grade = t.value("grade").toString();
+                                        info.subject = t.value("subject").toString();
+                                        info.class_taught = t.value("class_taught").toString();
+                                        m_userInfo.teachings.append(info);
+                                    }
+                                } else {
+                                    m_userInfo.teachings.clear();
+                                }
                                 m_userInfo.strIsAdministrator = oUserInfo.at(0)["is_administrator"].toString();
                                 m_userInfo.avatar = oUserInfo.at(0)["avatar"].toString();
                                 m_userInfo.strIdNumber = oUserInfo.at(0)["id_number"].toString();
@@ -102,20 +156,20 @@ void TACMainDialog::Init(QString qPhone, int user_id)
                                 //int iteacher_unique_id = oUserInfo.at(0)["teacher_unique_id"].toString();
                                 //m_userInfo.teacher_unique_id = QString("%1").arg(iteacher_unique_id, 6, 10, QChar('0'));
 
-                                m_userInfo.teacher_unique_id = oUserInfo.at(0)["teacher_unique_id"].toString();
+                                m_userInfo.classId = oUserInfo.at(0)["classId"].toString();
                                 QString avatarBase64 = oUserInfo.at(0)["avatar_base64"].toString();
 
                                 // 更新 CommonInfo 中的用户信息
                                 CommonInfo::InitData(m_userInfo);
                                 
+                                // 初始化学校课程表数据（schoolId 已准备好）
+                                if (desktopManagerWidget) {
+                                    desktopManagerWidget->initSchoolCourseScheduleData();
+                                }
+                                
                                 // 更新托盘组件中的管理员按钮状态（如果已创建）
                                 if (trayWidget) {
                                     trayWidget->updateAdminButtonState();
-                                }
-
-                                if (InitSDK())
-                                {
-                                    Login(m_userInfo.teacher_unique_id.toStdString());
                                 }
 
                                 // 确定保存路径
@@ -279,8 +333,29 @@ void TACMainDialog::Init(QString qPhone, int user_id)
         }
         else if (type == TACNavigationBarWidgetType::HOMEWORK)
         {
-            if (homeworkDialog)
-                homeworkDialog->show();
+            // 使用 HomeworkViewDialog 显示作业（与 ScheduleDialog 中的窗口一致）
+            if (!homeworkViewDialog) {
+                homeworkViewDialog = new HomeworkViewDialog(this);
+            }
+            
+            // 从缓存中读取当前日期的作业数据
+            QDate currentDate = QDate::currentDate();
+            QString dateStr = currentDate.toString("yyyy-MM-dd");
+            QMap<QString, QString> homeworkContent = m_homeworkByDate.value(dateStr);
+            
+            homeworkViewDialog->setDate(currentDate);
+            homeworkViewDialog->setHomeworkContent(homeworkContent);
+            
+            // 获取主屏幕几何信息，居中显示
+            QScreen* screen = QApplication::primaryScreen();
+            QRect screenGeometry = screen->geometry();
+            int x = (screenGeometry.width() - homeworkViewDialog->width()) / 2;
+            int y = (screenGeometry.height() - homeworkViewDialog->height()) / 2;
+            homeworkViewDialog->move(x, y);
+            
+            homeworkViewDialog->show();
+            homeworkViewDialog->raise();
+            homeworkViewDialog->activateWindow();
         }
         else if (type == TACNavigationBarWidgetType::MESSAGE)
         {
@@ -602,11 +677,15 @@ bool TACMainDialog::InitSDK() { //初始化ImSDK
     //Logf("InitSdk", kTIMLog_Info, "sdkappid:%s Log&Cfg path:%s", sdkappid.c_str(), path.c_str());
 }
 
-void TACMainDialog::Login(std::string userid) { //登入
-    //std::string userid = m_UserIdEdit->GetText().GetStringA();
-    std::string usersig = GenerateTestUserSig::instance().genTestUserSig(userid);
+void TACMainDialog::Login(std::string classId) { //登入
+    UserInfo userinfo = CommonInfo::GetData();
+    userinfo.classId = classId.c_str();
+    CommonInfo::InitData(userinfo);
+    m_userInfo.classId = classId.c_str();
+
+    std::string usersig = GenerateTestUserSig::instance().genTestUserSig(classId);
     //login_id = userid;
-    TIMLogin(userid.c_str(), usersig.c_str(), [](int32_t code, const char* desc, const char* json_param, const void* user_data) {
+    TIMLogin(classId.c_str(), usersig.c_str(), [](int32_t code, const char* desc, const char* json_param, const void* user_data) {
         TACMainDialog* ths = (TACMainDialog*)user_data;
         if (code != ERR_SUCC) { // 登入失败
             //ths->Logf("Login", kTIMLog_Error, "Failure!code:%d desc", code, desc);

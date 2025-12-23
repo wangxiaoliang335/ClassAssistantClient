@@ -16,6 +16,12 @@
 #include <QGraphicsDropShadowEffect>
 #include <QDebug>
 #include <QList>
+#include <QDir>
+#include <QFileInfo>
+#include <QCoreApplication>
+#include <QCloseEvent>
+#include <QHideEvent>
+#include "xlsxdocument.h"
 
 class RandomCallDialog : public QDialog
 {
@@ -36,6 +42,9 @@ public:
     
     // 获取选中的参与者
     QList<struct StudentInfo> getParticipants() const;
+    
+    // 加载已下载的Excel文件并更新表格和属性选择
+    void loadExcelFiles(const QString& classId);
 
 private slots:
     void onTableChanged(int index);
@@ -54,6 +63,19 @@ private:
     void updateStudentScore(const QString& studentId, double newScore);
     double getStudentScore(const QString& studentId);
     QString getStudentName(const QString& studentId);
+    
+    // 读取Excel文件
+    bool readExcelFile(const QString& fileName, QStringList& headers, QList<QStringList>& dataRows);
+    bool readCSVFile(const QString& fileName, QStringList& headers, QList<QStringList>& dataRows);
+    
+    // 从Excel数据创建学生信息列表
+    void createStudentsFromExcelData(const QStringList& headers, const QList<QStringList>& dataRows);
+    
+    // 更新表格和属性下拉框
+    void updateTableAndAttributeComboBoxes(const QStringList& excelFiles);
+    
+    // 恢复座位按钮的原始连接
+    void restoreSeatButtonConnections();
     
     QComboBox* tableComboBox; // 隐藏的ComboBox，用于实际功能
     QComboBox* attributeComboBox; // 隐藏的ComboBox，用于实际功能
@@ -78,9 +100,15 @@ private:
     QPoint m_dragPosition;
     bool m_dragging;
     
+    // Excel文件相关
+    QMap<QString, QString> m_excelFileMap; // 表格名称 -> Excel文件路径
+    QString m_classId; // 班级ID
+    
 protected:
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
+    void closeEvent(QCloseEvent* event) override;
+    void hideEvent(QHideEvent* event) override;
 };
 

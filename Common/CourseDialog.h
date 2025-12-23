@@ -3,6 +3,7 @@
 #include <QDialog>
 #include <QPushButton>
 #include <QVBoxLayout>
+#include <QHBoxLayout>
 #include <QFileDialog>
 #include <QFile>
 #include <QTextStream>
@@ -15,6 +16,12 @@
 #include <QRegExp>
 #include <QUrl>
 #include <QUrlQuery>
+#include <QScreen>
+#include <QApplication>
+#include <QMoveEvent>
+#include <QShowEvent>
+#include <QMouseEvent>
+#include <QPoint>
 #include "CourseTableWidget.h"
 #include "TAHttpHandler.h"
 #include "QXlsx/header/xlsxdocument.h"
@@ -29,13 +36,42 @@ class CourseDialog : public QDialog
     Q_OBJECT
 public:
     explicit CourseDialog(QWidget* parent = nullptr)
-        : QDialog(parent), m_unique_group_id(""), m_classid("")
+        : QDialog(parent), m_unique_group_id(""), m_classid(""), m_dragging(false)
     {
+        // 移除标题栏
+        setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
+        
         setWindowTitle(QStringLiteral("课程表"));
         resize(850, 650);
-        setStyleSheet("background-color:#f5d6c6;"); // 类似图片里的浅粉底色
+        // 修改为深灰色背景，白色文字
+        setStyleSheet("background-color:#2b2b2b; color: white;");
 
         auto* layout = new QVBoxLayout(this);
+        layout->setContentsMargins(10, 10, 10, 10);
+        layout->setSpacing(10);
+        
+        // 顶部栏：关闭按钮
+        QHBoxLayout* topLayout = new QHBoxLayout;
+        topLayout->addStretch();
+        
+        m_closeButton = new QPushButton("✕", this);
+        m_closeButton->setFixedSize(30, 30);
+        m_closeButton->setStyleSheet(
+            "QPushButton {"
+            "background-color: transparent;"
+            "color: white;"
+            "font-size: 18px;"
+            "font-weight: bold;"
+            "border: none;"
+            "}"
+            "QPushButton:hover {"
+            "background-color: #444;"
+            "border-radius: 15px;"
+            "}"
+        );
+        connect(m_closeButton, &QPushButton::clicked, this, &CourseDialog::close);
+        topLayout->addWidget(m_closeButton);
+        layout->addLayout(topLayout);
         auto* btnImport = new QPushButton(QStringLiteral("导入"));
         btnImport->setFixedSize(60, 28);
         btnImport->setStyleSheet(
@@ -62,11 +98,7 @@ public:
         layout->addWidget(sendBtn, 0, Qt::AlignLeft);
 
         m_table = new CourseTableWidget(this);
-        m_table->setStyleSheet(
-            "QHeaderView::section{background-color:#2f3240;color:white;font-weight:bold;}"
-            "QTableWidget::item{border:1px solid lightgray;}"
-            "QTableWidget::item:selected{background-color:#3399ff;color:white;}"
-        );
+        // 样式已在CourseTableWidget构造函数中设置，无需重复设置
         layout->addWidget(m_table, 1);
 
         connect(btnImport, &QPushButton::clicked, this, &CourseDialog::onImport);
@@ -121,6 +153,78 @@ public:
         fetchCourseSchedule();
     }
 
+protected:
+    void moveEvent(QMoveEvent* event) override {
+        QDialog::moveEvent(event);
+        checkWindowVisibility();
+    }
+    
+    void showEvent(QShowEvent* event) override {
+        QDialog::showEvent(event);
+        checkWindowVisibility();
+    }
+    
+    void mousePressEvent(QMouseEvent* event) override {
+        if (event->button() == Qt::LeftButton) {
+            QWidget* child = childAt(event->pos());
+            // 如果点击的是关闭按钮，不处理拖拽
+            if (child == m_closeButton) {
+                QDialog::mousePressEvent(event);
+                return;
+            }
+            // 如果点击的是表格或其他可交互控件，不处理拖拽
+            if (child && (qobject_cast<QPushButton*>(child) || 
+                          qobject_cast<CourseTableWidget*>(child) ||
+                          child->parent() == m_table)) {
+                QDialog::mousePressEvent(event);
+                return;
+            }
+            // 其他情况允许拖拽（主要是窗口空白区域和顶部区域）
+            m_dragging = true;
+            m_dragStartPosition = event->globalPos() - frameGeometry().topLeft();
+            event->accept();
+        }
+        QDialog::mousePressEvent(event);
+    }
+    
+    void mouseMoveEvent(QMouseEvent* event) override {
+        if (m_dragging && (event->buttons() & Qt::LeftButton)) {
+            move(event->globalPos() - m_dragStartPosition);
+            event->accept();
+        }
+        QDialog::mouseMoveEvent(event);
+    }
+    
+    void mouseReleaseEvent(QMouseEvent* event) override {
+        if (event->button() == Qt::LeftButton) {
+            m_dragging = false;
+            event->accept();
+        }
+        QDialog::mouseReleaseEvent(event);
+    }
+
+private:
+    void checkWindowVisibility() {
+        // 检查窗口是否移出屏幕
+        QRect windowRect = geometry();
+        QList<QScreen*> screens = QApplication::screens();
+        
+        bool isVisibleOnAnyScreen = false;
+        for (QScreen* screen : screens) {
+            QRect screenGeometry = screen->geometry();
+            // 检查窗口是否与任何屏幕有交集
+            if (windowRect.intersects(screenGeometry)) {
+                isVisibleOnAnyScreen = true;
+                break;
+            }
+        }
+        
+        // 如果窗口完全移出所有屏幕，则隐藏
+        if (!isVisibleOnAnyScreen && isVisible()) {
+            hide();
+        }
+    }
+
 private slots:
     void onImport() {
         QString file = QFileDialog::getOpenFileName(
@@ -142,6 +246,41 @@ private slots:
     }
 
 private:
+    // 从文本中提取时间信息（支持格式如 "7:00-7:40" 或 "7：00-7：40" 或 "7:00" 或 "早读 7:00-7:40"）
+    QString extractTimeFromText(const QString& text) const {
+        if (text.isEmpty()) return "";
+        
+        // 先统一将全角冒号转换为半角冒号，方便后续处理
+        QString normalizedText = text;
+        normalizedText.replace(QStringLiteral("："), QStringLiteral(":"));
+        
+        // 匹配时间范围格式：如 "7:00-7:40" 或 "7:00-8:30" 或 "早读 7:00-7:40"
+        // 支持冒号前后可能有空格，如 "7 : 00 - 7 : 40"
+        QRegExp timeRangePattern("(\\d{1,2})\\s*:\\s*(\\d{2})\\s*-\\s*(\\d{1,2})\\s*:\\s*(\\d{2})");
+        if (timeRangePattern.indexIn(normalizedText) != -1) {
+            QString startHour = timeRangePattern.cap(1);
+            QString startMin = timeRangePattern.cap(2);
+            QString endHour = timeRangePattern.cap(3);
+            QString endMin = timeRangePattern.cap(4);
+            return startHour + ":" + startMin + "-" + endHour + ":" + endMin;
+        }
+        
+        // 匹配单个时间格式：如 "7:00" 或 "8:30"
+        QRegExp singleTimePattern("(\\d{1,2})\\s*:\\s*(\\d{2})");
+        if (singleTimePattern.indexIn(normalizedText) != -1) {
+            QString hour = singleTimePattern.cap(1);
+            QString min = singleTimePattern.cap(2);
+            return hour + ":" + min;
+        }
+        
+        return "";
+    }
+
+    // 检查文本是否包含时间信息
+    bool containsTime(const QString& text) const {
+        return !extractTimeFromText(text).isEmpty();
+    }
+
     void importFromExcel(const QString& filePath) {
         using namespace QXlsx;
         
@@ -170,7 +309,7 @@ private:
 
         // 智能识别 Excel 格式：
         // 1. 检测第一行是否包含星期（周一、周二等），如果有则跳过第一行
-        // 2. 检测第一列是否包含时间，如果有则跳过第一列
+        // 2. 检测第一列是否包含时间，如果有则跳过第一列并更新垂直表头
 
         int startRow = 1;  // Excel 行号从 1 开始
         int startCol = 1;  // Excel 列号从 1 开始
@@ -200,17 +339,13 @@ private:
             startRow = 2;  // 跳过第一行
         }
 
-        // 检测第一列是否包含时间
+        // 检测第一列是否包含时间（先检查前几行判断是否需要跳过第一列）
         bool firstColIsTime = false;
-        // 时间格式：如 "6:00", "8:10", "14:10" 等
-        QRegExp timePattern("^\\d{1,2}:\\d{2}$");
-        
-        // 检查第一列的前几行是否包含时间（从第一行开始检查，因为可能第一行第一列就是时间）
         int checkStartRow = firstRowIsWeekday ? 2 : 1;
         for (int row = checkStartRow; row <= qMin(checkStartRow + 10, range.lastRow()); ++row) {
             QVariant cellValue = xlsx.read(row, 1);
             QString cellText = cellValue.toString().trimmed();
-            if (timePattern.exactMatch(cellText)) {
+            if (!extractTimeFromText(cellText).isEmpty()) {
                 firstColIsTime = true;
                 break;
             }
@@ -218,6 +353,11 @@ private:
         
         if (firstColIsTime) {
             startCol = 2;  // 跳过第一列
+        }
+
+        // 确保表格有15行（保持默认行数，即使导入的数据少于15行）
+        if (m_table->rowCount() < 15) {
+            m_table->setRowCount(15);
         }
 
         // 清空表格
@@ -230,9 +370,20 @@ private:
         // 读取数据并填充表格
         int excelRow = startRow;
         int tableRow = 0;
+        // 导入时保持15行，只填充Excel中实际有数据的行
         int maxRows = qMin(range.lastRow() - startRow + 1, m_table->rowCount());
 
         for (int i = 0; i < maxRows && tableRow < m_table->rowCount(); ++i, ++excelRow, ++tableRow) {
+            // 检查第一列是否包含时间，如果包含则直接用第一列的完整文本覆盖该行的垂直表头
+            if (firstColIsTime) {
+                QVariant firstColValue = xlsx.read(excelRow, 1);
+                QString firstColText = firstColValue.toString().trimmed();
+                if (!firstColText.isEmpty()) {
+                    // 直接用第一列的完整文本覆盖对应行的垂直表头
+                    m_table->setVerticalHeaderItem(tableRow, new QTableWidgetItem(firstColText));
+                }
+            }
+            
             int excelCol = startCol;
             int tableCol = 0;
 
@@ -260,6 +411,9 @@ private:
 
         QMessageBox::information(this, QStringLiteral("提示"), 
             QStringLiteral("Excel 文件导入成功"));
+        
+        // 导入成功后自动发送到服务器，覆盖旧数据
+        onSendToServer();
     }
 
     void importFromCsv(const QString& filePath) {
@@ -273,6 +427,11 @@ private:
         QTextStream in(&file);
         in.setCodec("UTF-8");
 
+        // 确保表格有15行（保持默认行数，即使导入的数据少于15行）
+        if (m_table->rowCount() < 15) {
+            m_table->setRowCount(15);
+        }
+
         // 清空表格
         for (int row = 0; row < m_table->rowCount(); ++row) {
             for (int col = 0; col < m_table->columnCount(); ++col) {
@@ -280,22 +439,11 @@ private:
             }
         }
 
-        // 读取 CSV 数据
-        int row = 0;
-        bool skipFirstRow = true; // 跳过第一行（表头）
-
-        while (!in.atEnd() && row < m_table->rowCount()) {
-            QString line = in.readLine();
-            if (skipFirstRow) {
-                skipFirstRow = false;
-                continue;
-            }
-
-            // 改进的 CSV 解析，处理包含逗号的字段（用引号括起来的）
+        // 辅助函数：解析 CSV 行
+        auto parseCsvLine = [](const QString& line) -> QStringList {
             QStringList values;
             QString currentValue;
             bool inQuotes = false;
-            
             for (int i = 0; i < line.length(); ++i) {
                 QChar ch = line[i];
                 if (ch == '"') {
@@ -307,33 +455,110 @@ private:
                     currentValue += ch;
                 }
             }
-            // 添加最后一个值
             if (!currentValue.isEmpty() || line.endsWith(',')) {
                 values.append(currentValue.trimmed());
             }
-            
-            int col = 0;
-            // 跳过第一列（如果是时间列）
-            int startCol = (skipFirstRow && values.size() > 0 && values[0].isEmpty()) ? 1 : 0;
-            for (int i = startCol; i < values.size() && col < m_table->columnCount(); ++i) {
-                QString value = values[i];
-                // 移除引号（如果存在）
-                if (value.startsWith("\"") && value.endsWith("\"") && value.length() >= 2) {
-                    value = value.mid(1, value.length() - 2);
+            return values;
+        };
+
+        // 辅助函数：清理 CSV 值（移除引号）
+        auto cleanCsvValue = [](const QString& value) -> QString {
+            QString cleaned = value;
+            if (cleaned.startsWith("\"") && cleaned.endsWith("\"") && cleaned.length() >= 2) {
+                cleaned = cleaned.mid(1, cleaned.length() - 2);
+            }
+            cleaned.replace("\"\"", "\"");
+            return cleaned;
+        };
+
+        // 读取 CSV 数据
+        int row = 0;
+        bool skipFirstRow = true; // 跳过第一行（表头）
+        bool firstColIsTime = false;
+
+        // 检查第一行是否包含星期
+        QStringList weekdays = { QStringLiteral("周一"), QStringLiteral("周二"), QStringLiteral("周三"), 
+                                 QStringLiteral("周四"), QStringLiteral("周五"), QStringLiteral("周六"), 
+                                 QStringLiteral("周日"), QStringLiteral("星期一"), QStringLiteral("星期二"),
+                                 QStringLiteral("星期三"), QStringLiteral("星期四"), QStringLiteral("星期五"),
+                                 QStringLiteral("星期六"), QStringLiteral("星期日") };
+        
+        // 先读取所有行到内存
+        QList<QStringList> allLines;
+        while (!in.atEnd()) {
+            QString line = in.readLine();
+            QStringList values = parseCsvLine(line);
+            if (!values.isEmpty()) {
+                allLines.append(values);
+            }
+        }
+        
+        // 检查第一行是否包含星期
+        bool firstRowIsWeekday = false;
+        if (!allLines.isEmpty()) {
+            QStringList firstLineValues = allLines[0];
+            for (const QString& value : firstLineValues) {
+                QString cleaned = cleanCsvValue(value);
+                for (const QString& weekday : weekdays) {
+                    if (cleaned.contains(weekday)) {
+                        firstRowIsWeekday = true;
+                        break;
+                    }
                 }
-                // 处理转义的引号
-                value.replace("\"\"", "\"");
+                if (firstRowIsWeekday) break;
+            }
+        }
+        
+        // 检查第一列是否包含时间（跳过表头行）
+        int checkStartIndex = firstRowIsWeekday ? 1 : 0;
+        for (int i = checkStartIndex; i < qMin(checkStartIndex + 10, allLines.size()); ++i) {
+            if (allLines[i].size() > 0) {
+                QString firstColValue = cleanCsvValue(allLines[i][0]);
+                if (!extractTimeFromText(firstColValue).isEmpty()) {
+                    firstColIsTime = true;
+                    break;
+                }
+            }
+        }
+        
+        // 读取数据并填充表格
+        int tableRow = 0;
+        int dataStartIndex = firstRowIsWeekday ? 1 : 0;
+        for (int i = dataStartIndex; i < allLines.size() && tableRow < m_table->rowCount(); ++i) {
+            QStringList values = allLines[i];
+            if (values.isEmpty()) {
+                continue;
+            }
+            
+            // 检查第一列是否包含时间，如果包含则直接用第一列的完整文本覆盖该行的垂直表头
+            if (firstColIsTime && values.size() > 0) {
+                QString firstColValue = cleanCsvValue(values[0]);
+                if (!firstColValue.isEmpty()) {
+                    // 直接用第一列的完整文本覆盖对应行的垂直表头
+                    m_table->setVerticalHeaderItem(tableRow, new QTableWidgetItem(firstColValue));
+                }
+            }
+            
+            // 填充数据
+            int col = 0;
+            // 如果第一列是时间列，则跳过第一列
+            int startCol = firstColIsTime ? 1 : 0;
+            for (int j = startCol; j < values.size() && col < m_table->columnCount(); ++j) {
+                QString value = cleanCsvValue(values[j]);
                 if (!value.isEmpty()) {
-                    m_table->setCourse(row, col, value, false);
+                    m_table->setCourse(tableRow, col, value, false);
                 }
                 ++col;
             }
-            ++row;
+            ++tableRow;
         }
 
         file.close();
         QMessageBox::information(this, QStringLiteral("提示"), 
             QStringLiteral("CSV 文件导入成功"));
+        
+        // 导入成功后自动发送到服务器，覆盖旧数据
+        onSendToServer();
     }
 
     void onExportClicked()
@@ -469,22 +694,22 @@ private:
             times.append(vi ? vi->text() : "");
         }
 
-        // 2) 收集单元格
+        // 2) 收集单元格（包括空单元格，以便服务器清空旧数据）
         QJsonArray cells;
         for (int row = 0; row < m_table->rowCount(); ++row) {
             for (int col = 0; col < m_table->columnCount(); ++col) {
                 QTableWidgetItem* item = m_table->item(row, col);
                 const QString name = item ? item->text() : "";
-                if (!name.isEmpty()) {
+                
+                // 发送所有单元格，包括空的，这样服务器可以清空旧数据
                     QJsonObject cell;
                     cell["row_index"] = row;
                     cell["col_index"] = col;
-                    cell["course_name"] = name;
+                cell["course_name"] = name;  // 空单元格发送空字符串
                     // 简单以背景是否非白作为高亮判断（与 setCourse 的用法保持一致可改造）
                     const bool isHighlight = item && item->background().color() != QColor(Qt::white);
                     cell["is_highlight"] = isHighlight ? 1 : 0;
                     cells.append(cell);
-                }
             }
         }
 
@@ -517,6 +742,9 @@ private:
     CourseTableWidget* m_table{};
     TAHttpHandler* m_httpHandler{};
     TAHttpHandler* m_fetchHandler{};
+    QPushButton* m_closeButton{}; // 关闭按钮
+    bool m_dragging; // 是否正在拖拽
+    QPoint m_dragStartPosition; // 拖拽起始位置
     QString m_unique_group_id; // 群组ID
     QString m_classid; // 班级ID
     
@@ -615,9 +843,18 @@ private:
 
         if (!times.isEmpty())
         {
-            m_table->setRowCount(times.size());
-            m_table->setVerticalHeaderLabels(times);
+            // 确保至少保持15行（CourseTableWidget的默认行数）
+            int targetRowCount = qMax(times.size(), 15);
+            m_table->setRowCount(targetRowCount);
+            
+            // 设置垂直表头：使用服务器返回的时间段，如果少于15个，用空字符串填充
+            QStringList headerLabels = times;
+            while (headerLabels.size() < 15) {
+                headerLabels.append(""); // 用空字符串填充，保持默认的15行
+            }
+            m_table->setVerticalHeaderLabels(headerLabels);
         }
+        // 如果times为空，保持CourseTableWidget的默认15行设置，不修改
 
         for (int r = 0; r < m_table->rowCount(); ++r)
         {

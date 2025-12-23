@@ -7,116 +7,75 @@
 HomeworkViewDialog::HomeworkViewDialog(QWidget* parent)
     : QDialog(parent)
 {
-    setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
-    setStyleSheet("background-color: #2b2b2b; color: white;");
+    setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
+    setAttribute(Qt::WA_TranslucentBackground);
     resize(500, 600);
 
     QVBoxLayout* mainLayout = new QVBoxLayout(this);
     mainLayout->setSpacing(15);
     mainLayout->setContentsMargins(20, 20, 20, 20);
 
+    // 主容器（半透明灰色背景，圆角）
+    QWidget* container = new QWidget(this);
+    container->setStyleSheet(
+        "QWidget {"
+        "background-color: rgba(60, 60, 60, 240);"
+        "border-radius: 12px;"
+        "}"
+    );
+    QVBoxLayout* containerLayout = new QVBoxLayout(container);
+    containerLayout->setContentsMargins(20, 20, 20, 20);
+    containerLayout->setSpacing(15);
+
     // 顶部栏：关闭按钮
     QHBoxLayout* topLayout = new QHBoxLayout;
     topLayout->addStretch();
     
-    QPushButton* btnCloseTop = new QPushButton("✕");
+    QPushButton* btnCloseTop = new QPushButton("✕", container);
     btnCloseTop->setFixedSize(30, 30);
     btnCloseTop->setStyleSheet(
         "QPushButton {"
-        "background-color: transparent;"
+        "background-color: rgba(100, 100, 100, 200);"
         "color: white;"
         "font-size: 18px;"
         "font-weight: bold;"
         "border: none;"
+        "border-radius: 15px;"
         "}"
         "QPushButton:hover {"
-        "background-color: #444;"
+        "background-color: rgba(120, 120, 120, 220);"
         "}"
     );
     connect(btnCloseTop, &QPushButton::clicked, this, &HomeworkViewDialog::onCloseClicked);
     topLayout->addWidget(btnCloseTop);
-    mainLayout->addLayout(topLayout);
+    containerLayout->addLayout(topLayout);
 
-    // 日期标题
-    dateLabel = new QLabel;
+    // 日期标题（按图片样式：日期 + 星期 + "家庭作业"）
+    dateLabel = new QLabel(container);
     dateLabel->setAlignment(Qt::AlignCenter);
     dateLabel->setStyleSheet(
-        "font-size: 18px;"
+        "font-size: 16px;"
         "font-weight: bold;"
         "color: white;"
         "padding: 10px;"
     );
-    mainLayout->addWidget(dateLabel);
+    containerLayout->addWidget(dateLabel);
 
-    // 科目作业显示区域
-    QVBoxLayout* contentLayout = new QVBoxLayout;
-    contentLayout->setSpacing(15);
-
-    // 语文
-    QLabel* labelChinese = new QLabel("语文:");
-    labelChinese->setStyleSheet("font-size: 14px; color: white; font-weight: bold;");
-    contentLayout->addWidget(labelChinese);
+    // 科目作业显示区域（可滚动）
+    QScrollArea* scrollArea = new QScrollArea(container);
+    scrollArea->setWidgetResizable(true);
+    scrollArea->setFrameShape(QFrame::NoFrame);
+    scrollArea->setStyleSheet("QScrollArea { background: transparent; border: none; }");
     
-    QLabel* contentChinese = new QLabel;
-    contentChinese->setWordWrap(true);
-    contentChinese->setStyleSheet(
-        "QLabel {"
-        "background-color: #3b3b3b;"
-        "color: white;"
-        "border: 1px solid #555;"
-        "border-radius: 4px;"
-        "padding: 10px;"
-        "font-size: 14px;"
-        "min-height: 60px;"
-        "}"
-    );
-    subjectLabels["语文"] = contentChinese;
-    contentLayout->addWidget(contentChinese);
+    scrollContentWidget = new QWidget;
+    this->contentLayout = new QVBoxLayout(scrollContentWidget);
+    this->contentLayout->setSpacing(15);
+    this->contentLayout->setContentsMargins(0, 0, 0, 0);
+    scrollArea->setWidget(scrollContentWidget);
+    containerLayout->addWidget(scrollArea, 1);
 
-    // 数学
-    QLabel* labelMath = new QLabel("数学:");
-    labelMath->setStyleSheet("font-size: 14px; color: white; font-weight: bold;");
-    contentLayout->addWidget(labelMath);
-    
-    QLabel* contentMath = new QLabel;
-    contentMath->setWordWrap(true);
-    contentMath->setStyleSheet(
-        "QLabel {"
-        "background-color: #3b3b3b;"
-        "color: white;"
-        "border: 1px solid #555;"
-        "border-radius: 4px;"
-        "padding: 10px;"
-        "font-size: 14px;"
-        "min-height: 60px;"
-        "}"
-    );
-    subjectLabels["数学"] = contentMath;
-    contentLayout->addWidget(contentMath);
-
-    // 英语
-    QLabel* labelEnglish = new QLabel("英语:");
-    labelEnglish->setStyleSheet("font-size: 14px; color: white; font-weight: bold;");
-    contentLayout->addWidget(labelEnglish);
-    
-    QLabel* contentEnglish = new QLabel;
-    contentEnglish->setWordWrap(true);
-    contentEnglish->setStyleSheet(
-        "QLabel {"
-        "background-color: #3b3b3b;"
-        "color: white;"
-        "border: 1px solid #555;"
-        "border-radius: 4px;"
-        "padding: 10px;"
-        "font-size: 14px;"
-        "min-height: 60px;"
-        "}"
-    );
-    subjectLabels["英语"] = contentEnglish;
-    contentLayout->addWidget(contentEnglish);
-
-    mainLayout->addLayout(contentLayout);
-    mainLayout->addStretch();
+    mainLayout->addWidget(container);
+    mainLayout->setContentsMargins(0, 0, 0, 0);
 }
 
 void HomeworkViewDialog::setDate(const QDate& date)
@@ -131,31 +90,30 @@ void HomeworkViewDialog::setDate(const QDate& date)
 
 void HomeworkViewDialog::setHomeworkContent(const QMap<QString, QString>& content)
 {
+    // 先更新/创建本次内容涉及的科目
     for (auto it = content.begin(); it != content.end(); ++it) {
-        if (subjectLabels.contains(it.key())) {
-            subjectLabels[it.key()]->setText(it.value());
-        }
+        QLabel* lbl = ensureSubjectLabel(it.key());
+        if (lbl) lbl->setText(it.value());
     }
-    
-    // 如果某个科目没有作业，显示提示
-    QStringList subjects = QStringList() << "语文" << "数学" << "英语";
-    for (const QString& subject : subjects) {
-        if (subjectLabels.contains(subject)) {
-            if (!content.contains(subject) || content[subject].isEmpty()) {
-                subjectLabels[subject]->setText("（暂无作业）");
-                subjectLabels[subject]->setStyleSheet(
-                    "QLabel {"
-                    "background-color: #3b3b3b;"
-                    "color: #888;"
-                    "border: 1px solid #555;"
-                    "border-radius: 4px;"
-                    "padding: 10px;"
-                    "font-size: 14px;"
-                    "min-height: 60px;"
-                    "font-style: italic;"
-                    "}"
-                );
-            }
+
+    // 已存在但本次没传的科目置为空提示（避免显示旧内容）
+    for (auto it = subjectLabels.begin(); it != subjectLabels.end(); ++it) {
+        const QString subject = it.key();
+        QLabel* lbl = it.value();
+        if (!content.contains(subject) || content.value(subject).trimmed().isEmpty()) {
+            lbl->setText(QString::fromUtf8(u8"（暂无作业）"));
+            lbl->setStyleSheet(
+                "QLabel {"
+                "background-color: #3b3b3b;"
+                "color: #888;"
+                "border: 1px solid #555;"
+                "border-radius: 4px;"
+                "padding: 10px;"
+                "font-size: 14px;"
+                "min-height: 60px;"
+                "font-style: italic;"
+                "}"
+            );
         }
     }
 }
@@ -163,5 +121,67 @@ void HomeworkViewDialog::setHomeworkContent(const QMap<QString, QString>& conten
 void HomeworkViewDialog::onCloseClicked()
 {
     reject();
+}
+
+void HomeworkViewDialog::mousePressEvent(QMouseEvent* event)
+{
+    if (event->button() == Qt::LeftButton) {
+        m_dragging = true;
+        m_dragStartPos = event->globalPos() - frameGeometry().topLeft();
+        event->accept();
+        return;
+    }
+    QDialog::mousePressEvent(event);
+}
+
+void HomeworkViewDialog::mouseMoveEvent(QMouseEvent* event)
+{
+    if (m_dragging && (event->buttons() & Qt::LeftButton)) {
+        move(event->globalPos() - m_dragStartPos);
+        event->accept();
+        return;
+    }
+    QDialog::mouseMoveEvent(event);
+}
+
+void HomeworkViewDialog::mouseReleaseEvent(QMouseEvent* event)
+{
+    if (event->button() == Qt::LeftButton) {
+        m_dragging = false;
+        event->accept();
+        return;
+    }
+    QDialog::mouseReleaseEvent(event);
+}
+
+QLabel* HomeworkViewDialog::ensureSubjectLabel(const QString& subject)
+{
+    const QString s = subject.trimmed();
+    if (s.isEmpty()) return nullptr;
+    if (subjectLabels.contains(s)) return subjectLabels[s];
+    if (!contentLayout || !scrollContentWidget) return nullptr;
+
+    QLabel* labelTitle = new QLabel(QString("%1:").arg(s), scrollContentWidget);
+    labelTitle->setStyleSheet("font-size: 14px; color: white; font-weight: bold; padding: 5px 0;");
+    contentLayout->addWidget(labelTitle);
+
+    QLabel* contentLbl = new QLabel(scrollContentWidget);
+    contentLbl->setWordWrap(true);
+    contentLbl->setStyleSheet(
+        "QLabel {"
+        "background-color: rgba(80, 80, 80, 200);"
+        "color: white;"
+        "border: 1px solid rgba(100, 100, 100, 150);"
+        "border-radius: 6px;"
+        "padding: 12px;"
+        "font-size: 14px;"
+        "min-height: 50px;"
+        "}"
+    );
+    contentLbl->setText(QString::fromUtf8(u8"（暂无作业）"));
+
+    subjectLabels[s] = contentLbl;
+    contentLayout->addWidget(contentLbl);
+    return contentLbl;
 }
 

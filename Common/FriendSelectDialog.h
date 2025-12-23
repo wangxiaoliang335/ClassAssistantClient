@@ -25,6 +25,7 @@ public:
     ~FriendSelectDialog();
 
     void InitData();
+    void setUseTencentSDK(bool useTencentSDK); // 普通群：邀请成员走腾讯 IM SDK（不走自建服务器）
     void setExcludedMemberIds(const QVector<QString>& memberIds); // 设置需要排除的成员ID列表
     void setGroupId(const QString& groupId); // 设置当前群组ID
     void setGroupName(const QString& groupName); // 设置当前群组名称
@@ -46,5 +47,7 @@ private:
     QString m_groupId; // 当前群组ID
     QString m_groupName; // 当前群组名称
     QMap<QString, QString> m_friendInfoMap; // 存储好友信息：key为teacher_unique_id，value为name
+
+    bool m_useTencentSDK = false;
 };
 

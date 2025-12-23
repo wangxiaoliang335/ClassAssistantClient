@@ -1,5 +1,8 @@
 #include "ScheduleDialog.h"
+#include "ChatDialog.h"
 #include "FriendGroupDialog.h"
+#include <algorithm>
+#include <QDateTime>
 #include <QApplication>
 #include <QCoreApplication>
 #include <QFile>
@@ -13,6 +16,9 @@
 #include <QDebug>
 #include <QSize>
 #include <QPixmap>
+#include <QNetworkAccessManager>
+#include <QNetworkRequest>
+#include <QNetworkReply>
 #include <cstring>
 
 // 定义 TempRoomStorage 的静态成员变量
@@ -93,8 +99,7 @@ void FriendGroupDialog::setupFriendTree()
     m_classRootItem->setExpanded(true);
     m_teacherRootItem->setExpanded(true);
 
-    connect(m_friendTree, &QTreeWidget::itemActivated, this, &FriendGroupDialog::handleFriendItemActivated);
-    connect(m_friendTree, &QTreeWidget::itemClicked, this, &FriendGroupDialog::handleFriendItemActivated);
+    connect(m_friendTree, &QTreeWidget::itemDoubleClicked, this, &FriendGroupDialog::handleFriendItemActivated);
 }
 
 void FriendGroupDialog::clearFriendTree()
@@ -125,12 +130,32 @@ void FriendGroupDialog::updateFriendCounts()
 
 void FriendGroupDialog::addClassNode(const QString& displayName, const QString& groupId, const QString& classid, bool iGroupOwner, bool isClassGroup)
 {
+    // 在"好友"标签页下，"班级"节点只显示班级（非班级群）
+    // 班级群应该只在"群聊"标签页下显示
+    if (isClassGroup) {
+        return; // 班级群不添加到好友树的"班级"节点
+    }
+    
     if (!m_classRootItem || groupId.isEmpty())
         return;
+    
+    // 更严格的验证：只有通过 fetchClassesByPrefix 获取的班级才应该显示
+    // 如果 classid 为空，说明这不是一个真正的班级，不应该添加到"班级"节点
+    // 另外，如果 groupId 和 classid 不相等，说明这是群组而不是班级
+    if (classid.isEmpty() || classid != groupId) {
+        return; // 不是真正的班级，不添加到好友树的"班级"节点
+    }
+    
     if (m_classItemMap.contains(groupId))
         return;
 
     QString title = displayName.trimmed().isEmpty() ? QStringLiteral("未命名班级") : displayName.trimmed();
+    
+    // 额外的验证：确保显示名称不是空的或无效的
+    if (title.isEmpty() || title.length() < 2) {
+        return; // 名称太短，可能是无效数据
+    }
+    
     QTreeWidgetItem* item = new QTreeWidgetItem(m_classRootItem);
     item->setText(0, title);
     item->setData(0, Qt::UserRole, QStringLiteral("class"));
@@ -230,8 +255,7 @@ void FriendGroupDialog::setupGroupTree()
 
     gLayout->addWidget(m_groupTree);
 
-    connect(m_groupTree, &QTreeWidget::itemActivated, this, &FriendGroupDialog::handleGroupItemActivated);
-    connect(m_groupTree, &QTreeWidget::itemClicked, this, &FriendGroupDialog::handleGroupItemActivated);
+    connect(m_groupTree, &QTreeWidget::itemDoubleClicked, this, &FriendGroupDialog::handleGroupItemActivated);
 }
 
 void FriendGroupDialog::clearGroupTree()
@@ -295,8 +319,9 @@ void FriendGroupDialog::addGroupTreeNode(const QString& displayName, const QStri
         return;
 
     QString title = displayName.trimmed().isEmpty() ? QStringLiteral("未命名群聊") : displayName.trimmed();
-    QString badge = classid.trimmed().isEmpty() ? QString() : classid.right(2);
-    QString label = badge.isEmpty() ? title : QStringLiteral("%1   %2").arg(badge, title);
+    //QString badge = classid.trimmed().isEmpty() ? QString() : classid.right(2);
+    //QString label = badge.isEmpty() ? title : QStringLiteral("%1   %2").arg(badge, title);
+    QString label = title;
 
     QTreeWidgetItem* item = new QTreeWidgetItem(parent);
     item->setText(0, label);
@@ -334,29 +359,84 @@ void FriendGroupDialog::openScheduleForGroup(const QString& groupName, const QSt
     if (unique_group_id.isEmpty())
         return;
 
-    ScheduleDialog* dlg = m_scheduleDlg.value(unique_group_id, nullptr);
-    if (!dlg) {
-        dlg = new ScheduleDialog(classid, this, m_pWs);
-        dlg->InitWebSocket();
-        QList<Notification> curNotification;
-        for (const auto& iter : notifications) {
-            if (iter.unique_group_id == unique_group_id) {
-                curNotification.append(iter);
+    // 分流逻辑：
+    // - 班级群：isClassGroup=true -> 继续走 ScheduleDialog
+    // - 班级（好友树里的班级节点）：classid == groupId -> 继续走 ScheduleDialog
+    // - 其余（普通群）：走普通群聊天窗口
+    //
+    // 备注：普通群当前也可能带 classid，因此不能用“classid 是否为空”来判断普通群。
+    const bool isPureClassNode = !classid.trimmed().isEmpty() && (classid == unique_group_id);
+    const bool openSchedule = isClassGroup || isPureClassNode;
+
+    if (openSchedule) {
+        ScheduleDialog* dlg = m_scheduleDlg.value(unique_group_id, nullptr);
+        if (!dlg) {
+            dlg = new ScheduleDialog(classid, this, m_pWs);
+            dlg->InitWebSocket();
+            QList<Notification> curNotification;
+            for (const auto& iter : notifications) {
+                if (iter.unique_group_id == unique_group_id) {
+                    curNotification.append(iter);
+                }
             }
+            dlg->setNoticeMsg(curNotification);
+            if (m_prepareClassHistoryCache.contains(unique_group_id)) {
+                dlg->setPrepareClassHistory(m_prepareClassHistoryCache.value(unique_group_id));
+            }
+            // 传递缓存的作业数据到 ScheduleDialog
+            if (m_homeworkCache.contains(unique_group_id)) {
+                const QMap<QString, QMap<QString, QString>>& homeworkByDate = m_homeworkCache[unique_group_id];
+                for (auto it = homeworkByDate.begin(); it != homeworkByDate.end(); ++it) {
+                    const QString& dateStr = it.key();
+                    const QMap<QString, QString>& subjectContent = it.value();
+                    for (auto subIt = subjectContent.begin(); subIt != subjectContent.end(); ++subIt) {
+                        dlg->setHomeworkData(dateStr, subIt.key(), subIt.value());
+                    }
+                }
+            }
+            // 传递缓存的通知数据到 ScheduleDialog
+            if (m_notificationCache.contains(unique_group_id)) {
+                dlg->setNotificationData(m_notificationCache[unique_group_id]);
+            }
+            connectGroupLeftSignal(dlg, unique_group_id);
+            m_scheduleDlg[unique_group_id] = dlg;
         }
-        dlg->setNoticeMsg(curNotification);
-        if (m_prepareClassHistoryCache.contains(unique_group_id)) {
-            dlg->setPrepareClassHistory(m_prepareClassHistoryCache.value(unique_group_id));
+
+        if (dlg->isHidden()) {
+            dlg->InitData(groupName, unique_group_id, classid, iGroupOwner, isClassGroup);
+            dlg->show();
+        } else {
+            dlg->hide();
         }
-        connectGroupLeftSignal(dlg, unique_group_id);
-        m_scheduleDlg[unique_group_id] = dlg;
+        return;
     }
 
-    if (dlg->isHidden()) {
-        dlg->InitData(groupName, unique_group_id, classid, iGroupOwner, isClassGroup);
-        dlg->show();
+    // 普通群：打开聊天窗口（圆角弹窗）
+    ChatDialog* chatDlg = m_normalGroupChatDlg.value(unique_group_id, nullptr);
+    if (!chatDlg) {
+        chatDlg = new ChatDialog(this, m_pWs);
+        chatDlg->InitWebSocket();
+        chatDlg->InitData(unique_group_id, iGroupOwner);
+        // 普通群：显式设置上下文（即使当前 classid 可能不为空，也按普通群处理）
+        chatDlg->setGroupContext(classid, false);
+        connectNormalGroupLeftSignal(chatDlg, unique_group_id);
+        m_normalGroupChatDlg[unique_group_id] = chatDlg;
     } else {
-        dlg->hide();
+        // 重新确保 owner 状态最新
+        chatDlg->InitData(unique_group_id, iGroupOwner);
+        chatDlg->setGroupContext(classid, false);
+    }
+
+    if (!groupName.trimmed().isEmpty()) {
+        chatDlg->setWindowTitle(groupName.trimmed());
+    }
+
+    if (chatDlg->isHidden()) {
+        chatDlg->show();
+        chatDlg->raise();
+        chatDlg->activateWindow();
+    } else {
+        chatDlg->hide();
     }
 }
 
@@ -384,6 +464,7 @@ FriendGroupDialog::FriendGroupDialog(QWidget* parent, TaQTWebSocket* pWs)
     //fLayout->addLayout(makePairBtn("老师头像", "老师昵称", "green", "white"));
     //fLayout->addLayout(makePairBtn("老师头像", "老师昵称", "green", "white"));
     m_httpHandler = new TAHttpHandler(this);
+    m_networkManager = new QNetworkAccessManager(this);
     if (m_httpHandler)
     {
         connect(m_httpHandler, &TAHttpHandler::success, this, [=](const QString& responseString) {
@@ -416,6 +497,9 @@ FriendGroupDialog::FriendGroupDialog(QWidget* parent, TaQTWebSocket* pWs)
                             QString avatarPath = "";
                             QString faceUrl = groupObj["face_url"].toString();
                             if (!faceUrl.isEmpty()) {
+                                // 如果face_url包含阿里云地址，下载头像
+                                downloadGroupAvatar(faceUrl, groupId);
+                                
                                 // 从 face_url 中提取文件名
                                 QString fileName = faceUrl.section('/', -1);
                                 QString saveDir = QCoreApplication::applicationDirPath() + "/group_images/" + groupId;
@@ -430,6 +514,28 @@ FriendGroupDialog::FriendGroupDialog(QWidget* parent, TaQTWebSocket* pWs)
                             
                             // 读取 is_class_group 字段（默认为1，表示班级群）
                             bool isClassGroup = groupObj.contains("is_class_group") ? (groupObj["is_class_group"].toInt() == 1) : true;
+                            
+                            // 解析并保存临时房间信息（如果有）
+                            if (groupObj.contains("temp_room") && groupObj["temp_room"].isObject()) {
+                                QJsonObject tempRoomObj = groupObj["temp_room"].toObject();
+                                TempRoomInfo tempRoomInfo;
+                                tempRoomInfo.room_id = tempRoomObj["room_id"].toString();
+                                tempRoomInfo.whip_url = tempRoomObj["publish_url"].toString();  // 推流地址
+                                tempRoomInfo.whep_url = tempRoomObj["play_url"].toString();     // 拉流地址
+                                tempRoomInfo.stream_name = tempRoomObj["stream_name"].toString();
+                                tempRoomInfo.group_id = groupId;
+                                tempRoomInfo.owner_id = tempRoomObj["owner_id"].toString();
+                                tempRoomInfo.owner_name = tempRoomObj["owner_name"].toString();
+                                tempRoomInfo.owner_icon = tempRoomObj["owner_icon"].toString();
+                                
+                                // 保存到全局存储
+                                TempRoomStorage::saveTempRoomInfo(groupId, tempRoomInfo);
+                                
+                                qDebug() << "从服务器获取到临时房间信息，群组ID:" << groupId;
+                                qDebug() << "  房间ID:" << tempRoomInfo.room_id;
+                                qDebug() << "  推流地址:" << tempRoomInfo.whip_url;
+                                qDebug() << "  拉流地址:" << tempRoomInfo.whep_url;
+                            }
                             
                             addClassNode(groupName, groupId, classid, true, isClassGroup);
                             addGroupTreeNode(groupName, groupId, classid, true, isClassGroup);
@@ -458,6 +564,9 @@ FriendGroupDialog::FriendGroupDialog(QWidget* parent, TaQTWebSocket* pWs)
                             QString avatarPath = "";
                             QString faceUrl = groupObj["face_url"].toString();
                             if (!faceUrl.isEmpty()) {
+                                // 如果face_url包含阿里云地址，下载头像
+                                downloadGroupAvatar(faceUrl, groupId);
+                                
                                 // 从 face_url 中提取文件名
                                 QString fileName = faceUrl.section('/', -1);
                                 QString saveDir = QCoreApplication::applicationDirPath() + "/group_images/" + groupId;
@@ -472,6 +581,28 @@ FriendGroupDialog::FriendGroupDialog(QWidget* parent, TaQTWebSocket* pWs)
                             
                             // 读取 is_class_group 字段（默认为1，表示班级群）
                             bool isClassGroup = groupObj.contains("is_class_group") ? (groupObj["is_class_group"].toInt() == 1) : true;
+                            
+                            // 解析并保存临时房间信息（如果有）
+                            if (groupObj.contains("temp_room") && groupObj["temp_room"].isObject()) {
+                                QJsonObject tempRoomObj = groupObj["temp_room"].toObject();
+                                TempRoomInfo tempRoomInfo;
+                                tempRoomInfo.room_id = tempRoomObj["room_id"].toString();
+                                tempRoomInfo.whip_url = tempRoomObj["publish_url"].toString();  // 推流地址
+                                tempRoomInfo.whep_url = tempRoomObj["play_url"].toString();     // 拉流地址
+                                tempRoomInfo.stream_name = tempRoomObj["stream_name"].toString();
+                                tempRoomInfo.group_id = groupId;
+                                tempRoomInfo.owner_id = tempRoomObj["owner_id"].toString();
+                                tempRoomInfo.owner_name = tempRoomObj["owner_name"].toString();
+                                tempRoomInfo.owner_icon = tempRoomObj["owner_icon"].toString();
+                                
+                                // 保存到全局存储
+                                TempRoomStorage::saveTempRoomInfo(groupId, tempRoomInfo);
+                                
+                                qDebug() << "从服务器获取到临时房间信息，群组ID:" << groupId;
+                                qDebug() << "  房间ID:" << tempRoomInfo.room_id;
+                                qDebug() << "  推流地址:" << tempRoomInfo.whip_url;
+                                qDebug() << "  拉流地址:" << tempRoomInfo.whep_url;
+                            }
                             
                             addClassNode(groupName, groupId, classid, false, isClassGroup);
                             addGroupTreeNode(groupName, groupId, classid, false, isClassGroup);
@@ -613,6 +744,28 @@ FriendGroupDialog::FriendGroupDialog(QWidget* parent, TaQTWebSocket* pWs)
                                 displayName = groupObj.value("group_name").toString();
                             }
                             
+                            // 解析并保存临时房间信息（如果有）
+                            if (groupObj.contains("temp_room") && groupObj["temp_room"].isObject()) {
+                                QJsonObject tempRoomObj = groupObj["temp_room"].toObject();
+                                TempRoomInfo tempRoomInfo;
+                                tempRoomInfo.room_id = tempRoomObj["room_id"].toString();
+                                tempRoomInfo.whip_url = tempRoomObj["publish_url"].toString();  // 推流地址
+                                tempRoomInfo.whep_url = tempRoomObj["play_url"].toString();     // 拉流地址
+                                tempRoomInfo.stream_name = tempRoomObj["stream_name"].toString();
+                                tempRoomInfo.group_id = unique_group_id;
+                                tempRoomInfo.owner_id = tempRoomObj["owner_id"].toString();
+                                tempRoomInfo.owner_name = tempRoomObj["owner_name"].toString();
+                                tempRoomInfo.owner_icon = tempRoomObj["owner_icon"].toString();
+                                
+                                // 保存到全局存储
+                                TempRoomStorage::saveTempRoomInfo(unique_group_id, tempRoomInfo);
+                                
+                                qDebug() << "从服务器获取到临时房间信息（groups），群组ID:" << unique_group_id;
+                                qDebug() << "  房间ID:" << tempRoomInfo.room_id;
+                                qDebug() << "  推流地址:" << tempRoomInfo.whip_url;
+                                qDebug() << "  拉流地址:" << tempRoomInfo.whep_url;
+                            }
+                            
                             addClassNode(displayName, unique_group_id, classid, true, isClassGroup);
                             addGroupTreeNode(displayName, unique_group_id, classid, true, isClassGroup);
                         }
@@ -665,6 +818,28 @@ FriendGroupDialog::FriendGroupDialog(QWidget* parent, TaQTWebSocket* pWs)
                             QString displayName = groupObj.value("nickname").toString();
                             if (displayName.isEmpty()) {
                                 displayName = groupObj.value("group_name").toString();
+                            }
+                            
+                            // 解析并保存临时房间信息（如果有）
+                            if (groupObj.contains("temp_room") && groupObj["temp_room"].isObject()) {
+                                QJsonObject tempRoomObj = groupObj["temp_room"].toObject();
+                                TempRoomInfo tempRoomInfo;
+                                tempRoomInfo.room_id = tempRoomObj["room_id"].toString();
+                                tempRoomInfo.whip_url = tempRoomObj["publish_url"].toString();  // 推流地址
+                                tempRoomInfo.whep_url = tempRoomObj["play_url"].toString();     // 拉流地址
+                                tempRoomInfo.stream_name = tempRoomObj["stream_name"].toString();
+                                tempRoomInfo.group_id = unique_group_id;
+                                tempRoomInfo.owner_id = tempRoomObj["owner_id"].toString();
+                                tempRoomInfo.owner_name = tempRoomObj["owner_name"].toString();
+                                tempRoomInfo.owner_icon = tempRoomObj["owner_icon"].toString();
+                                
+                                // 保存到全局存储
+                                TempRoomStorage::saveTempRoomInfo(unique_group_id, tempRoomInfo);
+                                
+                                qDebug() << "从服务器获取到临时房间信息（joingroups），群组ID:" << unique_group_id;
+                                qDebug() << "  房间ID:" << tempRoomInfo.room_id;
+                                qDebug() << "  推流地址:" << tempRoomInfo.whip_url;
+                                qDebug() << "  拉流地址:" << tempRoomInfo.whep_url;
                             }
                             
                             addClassNode(displayName, unique_group_id, classid, false, isClassGroup);
@@ -752,11 +927,13 @@ FriendGroupDialog::FriendGroupDialog(QWidget* parent, TaQTWebSocket* pWs)
 
     // 关闭按钮（右上角）
     closeButton = new QPushButton(this);
-    closeButton->setIcon(QIcon(":/res/img/widget-close.png"));
-    closeButton->setIconSize(QSize(22, 22));
-    closeButton->setFixedSize(QSize(22, 22));
-    closeButton->setStyleSheet("background: transparent;");
-    closeButton->move(width() - 24, 4);
+    closeButton->setText("X");
+    closeButton->setFixedSize(26, 26);
+    closeButton->setStyleSheet(
+        "QPushButton { background-color: #666666; color: white; border: none; border-radius: 4px; font-weight: bold; }"
+        "QPushButton:hover { background-color: #777777; }"
+    );
+    closeButton->move(width() - closeButton->width() - 6, 6);
     closeButton->hide();
     connect(closeButton, &QPushButton::clicked, this, &QDialog::reject);
 
@@ -922,6 +1099,30 @@ void FriendGroupDialog::connectGroupLeftSignal(ScheduleDialog* scheduleDlg, cons
     }, Qt::UniqueConnection); // 使用 UniqueConnection 避免重复连接
 }
 
+void FriendGroupDialog::connectNormalGroupLeftSignal(ChatDialog* chatDlg, const QString& groupId)
+{
+    if (!chatDlg) return;
+
+    // 普通群：退出/解散后刷新群列表并清理缓存窗口
+    connect(chatDlg, &ChatDialog::normalGroupLeft, this, [this](const QString& leftGroupId) {
+        qDebug() << "收到普通群退出信号，刷新群列表，群组ID:" << leftGroupId;
+        if (m_normalGroupChatDlg.contains(leftGroupId)) {
+            m_normalGroupChatDlg[leftGroupId]->deleteLater();
+            m_normalGroupChatDlg.remove(leftGroupId);
+        }
+        this->InitData();
+    }, Qt::UniqueConnection);
+
+    connect(chatDlg, &ChatDialog::normalGroupDismissed, this, [this](const QString& dismissedGroupId) {
+        qDebug() << "收到普通群解散信号，刷新群列表，群组ID:" << dismissedGroupId;
+        if (m_normalGroupChatDlg.contains(dismissedGroupId)) {
+            m_normalGroupChatDlg[dismissedGroupId]->deleteLater();
+            m_normalGroupChatDlg.remove(dismissedGroupId);
+        }
+        this->InitData();
+    }, Qt::UniqueConnection);
+}
+
 // 帮助函数：生成一行两个不同用途的按钮（如头像+昵称）
 void FriendGroupDialog::InitData()
 {
@@ -940,7 +1141,8 @@ void FriendGroupDialog::InitData()
         }
     }
 
-    GetGroupJoinedList();
+    GetGroupJoinedList(); //客户端不用从腾讯服务器获取群列表了
+
     if (m_httpHandler)
     {
         UserInfo userInfo = CommonInfo::GetData();
@@ -950,10 +1152,15 @@ void FriendGroupDialog::InitData()
         m_httpHandler->get(url);
 
         // 调用获取群组信息的接口
-        QString groupUrl = "http://47.100.126.194:5000/groups/by-teacher?";
-        groupUrl += "teacher_unique_id=";
-        groupUrl += userInfo.teacher_unique_id;
-        m_httpHandler->get(groupUrl);
+        //QString groupUrl = "http://47.100.126.194:5000/groups/by-teacher?";
+        //groupUrl += "teacher_unique_id=";
+        //groupUrl += userInfo.teacher_unique_id;
+        //m_httpHandler->get(groupUrl);
+        
+        // 获取班级列表并显示在"好友"标签页下的"班级"节点中
+        if (!userInfo.schoolId.isEmpty()) {
+            fetchClassesByPrefix(userInfo.schoolId);
+        }
     }
 }
 
@@ -995,29 +1202,127 @@ void FriendGroupDialog::GetGroupJoinedList() { // 已加入群列表
             return;
         }
         QJsonArray json_group_list = jsonDoc.array();
+
+        // 收集群组ID，用于查询临时语音房间
+        QSet<QString> groupIdSet;
         
         // 获取当前用户信息
         UserInfo userInfo = CommonInfo::GetData();
-        QString userId = userInfo.teacher_unique_id; // 或使用其他用户ID字段
+        QString userId = userInfo.classId; // 或使用其他用户ID字段
         
         // 构造上传到服务器的JSON数据
         QJsonArray groupsArray;
         
+        auto normalizeGroupType = [](const QJsonValue& v) -> QString {
+            // SDK callback examples return string values: "Public"/"Private"/"ChatRoom"/"AVChatRoom"/...
+            // But we also defensively handle numeric enum values.
+            if (v.isString()) {
+                return v.toString().trimmed();
+            }
+            if (v.isDouble()) {
+                const int t = v.toInt();
+                switch (t) {
+                case kTIMGroup_Public:    return QStringLiteral("Public");
+                case kTIMGroup_Private:   return QStringLiteral("Private");
+                case kTIMGroup_ChatRoom:  return QStringLiteral("ChatRoom");
+                case kTIMGroup_BChatRoom: return QStringLiteral("BChatRoom");
+                case kTIMGroup_AVChatRoom:return QStringLiteral("AVChatRoom");
+                default:                  return QString::number(t);
+                }
+            }
+            return QString();
+        };
+
+        // 统一规则：腾讯 IM 群类型 groupType == "Public" 视为普通群，其它类型一律视为班级群
+        // （后端 classid / 文案兜底不再参与判定，避免误判）
+
         for (int i = 0; i < json_group_list.size(); i++) {
             QJsonObject group = json_group_list[i].toObject();
             
             // 获取群组基础信息
             QString groupid = group[kTIMGroupBaseInfoGroupId].toString();
             QString groupName = group[kTIMGroupBaseInfoGroupName].toString();
+            if (groupName.isEmpty()) {
+                groupName = group[kTIMGroupDetialInfoGroupName].toString();
+            }
             
-            // 构造群组信息对象
+            // 读取自定义字段（班级ID）
+            QString classid;
+            QJsonArray customInfo = group[kTIMGroupDetialInfoCustomInfo].toArray();
+            for (int j = 0; j < customInfo.size(); j++) {
+                QJsonObject customItem = customInfo[j].toObject();
+                QString key = customItem[kTIMGroupInfoCustemStringInfoKey].toString();
+                QString value = customItem[kTIMGroupInfoCustemStringInfoValue].toString();
+                // 兼容旧的带下划线格式和新的无下划线格式
+                if (key == "class_id" || key == "classid") {
+                    classid = value;
+                    break;
+                }
+            }
+            
+            // 群组类型：根据腾讯群类型区分班级群 / 普通群
+            const QString groupType = normalizeGroupType(group.value(kTIMGroupBaseInfoGroupType));
+
+            // 判断是否是群主（通过 self_role 判断）
+            // - 400 或 "Owner" -> "Owner" (群主)
+            // - 300 或 "Admin" -> "Admin" (管理员)
+            // - 其他 -> "Member" (普通成员)
+            QJsonObject selfInfo = group[kTIMGroupBaseInfoSelfInfo].toObject();
+            QJsonValue roleValue = selfInfo[kTIMGroupSelfInfoRole];
+            bool isGroupOwner = false;
+            
+            // 支持整数和字符串两种格式
+            if (roleValue.isDouble()) {
+                int selfRole = roleValue.toInt();
+                isGroupOwner = (selfRole == 400); // 400 表示群主
+            } else if (roleValue.isString()) {
+                QString roleStr = roleValue.toString();
+                isGroupOwner = (roleStr == "Owner" || roleStr == "400");
+            }
+            
+            // 获取群组的 Introduction 和 Notification 字段
+            QString introduction = group[kTIMGroupDetialInfoIntroduction].toString();
+            QString notification = group[kTIMGroupDetialInfoNotification].toString();
+            
+            // 判断是否是班级群：按统一规则，仅 Public 为普通群，其它类型都认为是班级群
+            const bool isClassGroup = (groupType.compare(QStringLiteral("Public"), Qt::CaseInsensitive) != 0);
+            
+            // 仅班级群：如果班级ID为空，则将群组ID去掉末尾的两位作为班级ID（兜底）
+            if (isClassGroup && classid.isEmpty() && !groupid.isEmpty() && groupid.length() >= 2) {
+                classid = groupid.left(groupid.length() - 2);
+            }
+            
+            // 直接刷新到界面
+            ths->addClassNode(groupName, groupid, classid, isGroupOwner, isClassGroup);
+            ths->addGroupTreeNode(groupName, groupid, classid, isGroupOwner, isClassGroup);
+            
+            if (!classid.isEmpty()) {
+                ths->m_setClassId.insert(classid);
+            }
+
+            // 记录群组ID
+            groupIdSet.insert(groupid.trimmed());
+            
+            // 构造群组信息对象（用于后续可能的同步，暂时保留但不使用）
             QJsonObject groupObj;
             
             // 群组基础信息
             groupObj["group_id"] = groupid;
-            groupObj["group_name"] = groupName.isEmpty() ? group[kTIMGroupDetialInfoGroupName].toString() : groupName;
-            groupObj["group_type"] = group[kTIMGroupBaseInfoGroupType].toInt();
-            groupObj["face_url"] = group[kTIMGroupBaseInfoFaceUrl].toString();
+            groupObj["group_name"] = groupName;
+            groupObj["group_type"] = groupType;
+            
+            // 优先使用详细信息中的FaceUrl，如果没有则使用基础信息中的FaceUrl
+            QString detailFaceUrl = group[kTIMGroupDetialInfoFaceUrl].toString();
+            QString baseFaceUrl = group[kTIMGroupBaseInfoFaceUrl].toString();
+            QString faceUrl = !detailFaceUrl.isEmpty() ? detailFaceUrl : baseFaceUrl;
+            groupObj["face_url"] = faceUrl;
+            groupObj["detail_face_url"] = detailFaceUrl;
+            
+            // 如果face_url不为空，下载头像并显示到班级群界面
+            if (!faceUrl.isEmpty()) {
+                ths->downloadGroupAvatar(faceUrl, groupid);
+            }
+            
             groupObj["info_seq"] = group[kTIMGroupBaseInfoInfoSeq].toInt();
             groupObj["latest_seq"] = group[kTIMGroupBaseInfoLastestSeq].toInt();
             groupObj["is_shutup_all"] = group[kTIMGroupBaseInfoIsShutupAll].toBool();
@@ -1025,8 +1330,7 @@ void FriendGroupDialog::GetGroupJoinedList() { // 已加入群列表
             // 群组详细信息
             groupObj["detail_group_id"] = group[kTIMGroupDetialInfoGroupId].toString();
             groupObj["detail_group_name"] = group[kTIMGroupDetialInfoGroupName].toString();
-            groupObj["detail_group_type"] = group[kTIMGroupDetialInfoGroupType].toInt();
-            groupObj["detail_face_url"] = group[kTIMGroupDetialInfoFaceUrl].toString();
+            groupObj["detail_group_type"] = normalizeGroupType(group.value(kTIMGroupDetialInfoGroupType));
             groupObj["create_time"] = group[kTIMGroupDetialInfoCreateTime].toInt();
             groupObj["detail_info_seq"] = group[kTIMGroupDetialInfoInfoSeq].toInt();
             groupObj["introduction"] = group[kTIMGroupDetialInfoIntroduction].toString();
@@ -1042,25 +1346,12 @@ void FriendGroupDialog::GetGroupJoinedList() { // 已加入群列表
             groupObj["visible"] = group[kTIMGroupDetialInfoVisible].toInt();
             groupObj["searchable"] = group[kTIMGroupDetialInfoSearchable].toInt();
             groupObj["detail_is_shutup_all"] = group[kTIMGroupDetialInfoIsShutupAll].toBool();
-            
-            // 读取自定义字段（班级ID和学校ID）
-            QJsonArray customInfo = group[kTIMGroupDetialInfoCustomInfo].toArray();
-            for (int j = 0; j < customInfo.size(); j++) {
-                QJsonObject customItem = customInfo[j].toObject();
-                QString key = customItem[kTIMGroupInfoCustemStringInfoKey].toString();
-                QString value = customItem[kTIMGroupInfoCustemStringInfoValue].toString();
-                // 兼容旧的带下划线格式和新的无下划线格式
-                if (key == "class_id" || key == "classid") {
-                    groupObj["classid"] = value;
-                } else if (key == "school_id" || key == "schoolid") {
-                    groupObj["schoolid"] = value;
-                }
-            }
+            groupObj["classid"] = classid;
             
             // 用户在该群组中的信息
-            QJsonObject selfInfo = group[kTIMGroupBaseInfoSelfInfo].toObject();
             QJsonObject memberInfo;
             memberInfo["user_id"] = userId;
+            memberInfo["user_name"] = userInfo.strName;
             memberInfo["readed_seq"] = group[kTIMGroupBaseInfoReadedSeq].toInt();
             memberInfo["msg_flag"] = group[kTIMGroupBaseInfoMsgFlag].toInt();
             memberInfo["join_time"] = selfInfo[kTIMGroupSelfInfoJoinTime].toInt();
@@ -1073,6 +1364,98 @@ void FriendGroupDialog::GetGroupJoinedList() { // 已加入群列表
             groupsArray.append(groupObj);
         }
         
+        qDebug() << "从腾讯服务器获取群组列表成功，共" << groupsArray.size() << "个群组，已直接刷新到界面";
+
+        // 调用临时语音房间查询接口 /temp_rooms/query
+        if (!groupIdSet.isEmpty()) {
+            QJsonArray groupIdArray;
+            for (const QString& gid : groupIdSet) {
+                QString trimmed = gid.trimmed();
+                if (!trimmed.isEmpty()) {
+                    groupIdArray.append(trimmed);
+                }
+            }
+
+            if (!groupIdArray.isEmpty()) {
+                QJsonObject payload;
+                payload["group_ids"] = groupIdArray;
+                QByteArray postData = QJsonDocument(payload).toJson(QJsonDocument::Compact);
+
+                QNetworkAccessManager* mgr = new QNetworkAccessManager(ths);
+                QNetworkRequest req(QUrl("http://47.100.126.194:5000/temp_rooms/query"));
+                req.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+                QNetworkReply* r = mgr->post(req, postData);
+
+                // 使用 ths 作为接收者，确保信号能正确触发
+                QObject::connect(r, &QNetworkReply::finished, ths, [mgr, r, ths]() {
+                    auto cleanup = [mgr, r]() {
+                        if (r) r->deleteLater();
+                        if (mgr) mgr->deleteLater();
+                    };
+
+                    if (!r) { cleanup(); return; }
+                    if (r->error() != QNetworkReply::NoError) {
+                        qWarning() << "查询临时语音房间失败:" << r->errorString();
+                        cleanup();
+                        return;
+                    }
+
+                    QByteArray resp = r->readAll();
+                    QJsonParseError perr;
+                    QJsonDocument doc = QJsonDocument::fromJson(resp, &perr);
+                    if (perr.error != QJsonParseError::NoError || !doc.isObject()) {
+                        qWarning() << "解析临时语音房间响应失败:" << perr.errorString();
+                        cleanup();
+                        return;
+                    }
+
+                    QJsonObject obj = doc.object();
+                    if (obj["code"].toInt() != 200) {
+                        qWarning() << "查询临时语音房间返回非200:" << resp;
+                        cleanup();
+                        return;
+                    }
+
+                    if (obj.contains("data") && obj["data"].isObject()) {
+                        QJsonObject dataObj = obj["data"].toObject();
+                        if (dataObj.contains("rooms") && dataObj["rooms"].isArray()) {
+                            QJsonArray rooms = dataObj["rooms"].toArray();
+                            for (const QJsonValue& v : rooms) {
+                                if (!v.isObject()) continue;
+                                QJsonObject roomObj = v.toObject();
+                                TempRoomInfo info;
+                                info.group_id = roomObj["group_id"].toString();
+                                info.room_id = roomObj["room_id"].toString();
+                                info.whip_url = roomObj["publish_url"].toString();
+                                info.whep_url = roomObj["play_url"].toString();
+                                info.stream_name = roomObj["stream_name"].toString();
+                                info.owner_id = roomObj["owner_id"].toString();
+                                info.owner_name = roomObj["owner_name"].toString();
+                                info.owner_icon = roomObj["owner_icon"].toString();
+                                if (!info.group_id.isEmpty()) {
+                                    TempRoomStorage::saveTempRoomInfo(info.group_id, info);
+                                    qDebug() << "已缓存语音房间:" << info.group_id << info.room_id;
+                                }
+                            }
+                        }
+                    }
+
+                    cleanup();
+                });
+            } else {
+                qWarning() << "group_ids 为空，跳过 temp_rooms/query 调用";
+            }
+        } else {
+            qWarning() << "未收集到群组ID，跳过 temp_rooms/query 调用";
+        }
+        
+        // 初始化 addGroupWidget（如果有群组数据）
+        if (ths->addGroupWidget /*&& !ths->m_setClassId.isEmpty()*/) {
+            ths->addGroupWidget->InitData(ths->m_setClassId);
+        }
+        
+        // 注释掉：同步到服务器的代码（暂时不需要）
+        /*
         // 构造最终的上传JSON
         QJsonObject uploadData;
         uploadData["user_id"] = userId;
@@ -1082,12 +1465,15 @@ void FriendGroupDialog::GetGroupJoinedList() { // 已加入群列表
         QJsonDocument uploadDoc(uploadData);
         QByteArray jsonData = uploadDoc.toJson(QJsonDocument::Compact);
         
+        const char* strJsonT = jsonData.toStdString().c_str();
+
         // 上传到服务器
         if (ths->m_httpHandler) {
             QString url = "http://47.100.126.194:5000/groups/sync";
             ths->m_httpHandler->post(url, jsonData);
             qDebug() << "上传群组信息到服务器，共" << groupsArray.size() << "个群组";
         }
+        */
         
         //CIMWnd::GetInst().Logf("GroupList", kTIMLog_Info, json_param);
         }, this);
@@ -1107,6 +1493,166 @@ void FriendGroupDialog::InitWebSocket()
     {
         connect(m_pWs, &TaQTWebSocket::newMessage,
             this, &FriendGroupDialog::onWebSocketMessage);
+        
+        // 连接家庭作业消息信号（先于 newMessage 信号发射）
+        connect(m_pWs, &TaQTWebSocket::homeworkReceived, this, [this](const QJsonObject& homeworkData) {
+            // 响应消息：包含 status 字段
+            if (homeworkData.contains(QStringLiteral("status"))) {
+                const QString status = homeworkData.value(QStringLiteral("status")).toString();
+                const QString message = homeworkData.value(QStringLiteral("message")).toString();
+                qDebug() << "作业发布响应:" << status << message;
+                return;
+            }
+
+            const QString groupId = homeworkData.value(QStringLiteral("group_id")).toString();
+            if (groupId.isEmpty()) {
+                return;
+            }
+
+            const QString dateStr = homeworkData.value(QStringLiteral("date")).toString();
+            const QString subject = homeworkData.value(QStringLiteral("subject")).toString().trimmed();
+            const QString content = homeworkData.value(QStringLiteral("content")).toString().trimmed();
+            if (dateStr.isEmpty() || subject.isEmpty() || content.isEmpty()) {
+                return;
+            }
+
+            // 缓存作业数据：按群组ID和日期聚合
+            m_homeworkCache[groupId][dateStr][subject] = content;
+            qDebug() << "FriendGroupDialog: 收到作业消息，已缓存到群组:" << groupId << "日期:" << dateStr << "科目:" << subject;
+            
+            // 如果对应的 ScheduleDialog 已创建，更新其缓存
+            if (m_scheduleDlg.contains(groupId)) {
+                ScheduleDialog* dlg = m_scheduleDlg[groupId];
+                if (dlg) {
+                    dlg->setHomeworkData(dateStr, subject, content);
+                }
+            }
+        });
+        
+        // 连接通知消息信号（先于 newMessage 信号发射）
+        connect(m_pWs, &TaQTWebSocket::notificationReceived, this, [this](const QJsonObject& notificationData) {
+            QString type = notificationData.value("type").toString();
+            
+            // 处理未读通知列表（班级端登录时接收）
+            if (type == "unread_notifications") {
+                if (notificationData.contains("data") && notificationData.value("data").isArray()) {
+                    QJsonArray notifications = notificationData.value("data").toArray();
+                    
+                    // 按群组ID分组缓存通知
+                    for (const QJsonValue& value : notifications) {
+                        if (!value.isObject()) continue;
+                        
+                        QJsonObject notifObj = value.toObject();
+                        QString groupId = notifObj.value("unique_group_id").toString();
+                        QString receiverId = notifObj.value("receiver_id").toString();
+                        
+                        if (groupId.isEmpty()) {
+                            continue;
+                        }
+                        
+                        QString content = notifObj.value("content").toString().trimmed();
+                        QString senderName = notifObj.value("sender_name").toString();
+                        QString createdAt = notifObj.value("created_at").toString();
+                        
+                        if (content.isEmpty()) {
+                            continue;
+                        }
+                        
+                        // 创建通知项
+                        NotificationItem item;
+                        item.content = content;
+                        item.senderName = senderName.isEmpty() ? "系统" : senderName;
+                        
+                        // 解析时间戳
+                        if (!createdAt.isEmpty()) {
+                            item.timestamp = QDateTime::fromString(createdAt, "yyyy-MM-dd HH:mm:ss");
+                        } else {
+                            item.timestamp = QDateTime::currentDateTime();
+                        }
+                        
+                        item.avatarUrl = QString(); // 暂时为空
+                        
+                        // 添加到对应群组的缓存
+                        m_notificationCache[groupId].append(item);
+                    }
+                    
+                    // 对每个群组的通知按时间倒序排序（最新的在前面）
+                    for (auto& notifications : m_notificationCache) {
+                        std::sort(notifications.begin(), notifications.end(),
+                            [](const NotificationItem& a, const NotificationItem& b) {
+                                return a.timestamp > b.timestamp;
+                            });
+                        
+                        // 最多保存100条
+                        if (notifications.size() > 100) {
+                            notifications = notifications.mid(0, 100);
+                        }
+                    }
+                    
+                    qDebug() << "FriendGroupDialog: 收到未读通知列表，已缓存到" << m_notificationCache.size() << "个群组";
+                    
+                    // 如果对应的 ScheduleDialog 已创建，更新其缓存
+                    for (auto it = m_notificationCache.begin(); it != m_notificationCache.end(); ++it) {
+                        QString groupId = it.key();
+                        if (m_scheduleDlg.contains(groupId)) {
+                            ScheduleDialog* dlg = m_scheduleDlg[groupId];
+                            if (dlg) {
+                                dlg->setNotificationData(it.value());
+                            }
+                        }
+                    }
+                }
+            }
+            // 处理单个通知消息（班级端接收）
+            else if (type == "notification") {
+                // 检查是否是响应消息（包含 status 字段）
+                if (notificationData.contains("status")) {
+                    // 这是发送通知的响应，不需要处理
+                    return;
+                }
+                
+                QString groupId = notificationData.value("group_id").toString();
+                if (groupId.isEmpty()) {
+                    groupId = notificationData.value("unique_group_id").toString();
+                }
+                
+                if (groupId.isEmpty()) {
+                    return;
+                }
+                
+                QString content = notificationData.value("content").toString().trimmed();
+                QString senderName = notificationData.value("sender_name").toString();
+                
+                if (content.isEmpty()) {
+                    return;
+                }
+                
+                // 创建通知项
+                NotificationItem item;
+                item.content = content;
+                item.senderName = senderName.isEmpty() ? "系统" : senderName;
+                item.timestamp = QDateTime::currentDateTime();
+                item.avatarUrl = QString();
+                
+                // 添加到对应群组的缓存（最新的在前面）
+                m_notificationCache[groupId].prepend(item);
+                
+                // 最多保存100条
+                if (m_notificationCache[groupId].size() > 100) {
+                    m_notificationCache[groupId].removeLast();
+                }
+                
+                qDebug() << "FriendGroupDialog: 收到通知消息，已缓存到群组:" << groupId;
+                
+                // 如果对应的 ScheduleDialog 已创建，更新其缓存
+                if (m_scheduleDlg.contains(groupId)) {
+                    ScheduleDialog* dlg = m_scheduleDlg[groupId];
+                    if (dlg) {
+                        dlg->addNotification(content, senderName);
+                    }
+                }
+            }
+        });
     }
 }
 
@@ -1194,7 +1740,7 @@ void FriendGroupDialog::resizeEvent(QResizeEvent* event)
 {
     QDialog::resizeEvent(event);
     //initShow();
-    closeButton->move(this->width() - 22, 0);
+    closeButton->move(this->width() - closeButton->width() - 6, 6);
 }
 
 void FriendGroupDialog::onWebSocketMessage(const QString& msg)
@@ -1283,4 +1829,157 @@ void FriendGroupDialog::processPrepareClassHistoryMessage(const QJsonObject& roo
             dlg->setPrepareClassHistory(it.value());
         }
     }
+}
+
+void FriendGroupDialog::fetchClassesByPrefix(const QString& schoolId)
+{
+    if (schoolId.isEmpty()) return;
+
+    QString prefix = schoolId;
+    if (prefix.length() != 6 || !prefix.toInt()) {
+        qWarning() << "学校ID格式错误，应为6位数字:" << prefix;
+        return;
+    }
+
+    QJsonObject jsonObj;
+    jsonObj["prefix"] = prefix;
+    QJsonDocument doc(jsonObj);
+    QByteArray reqData = doc.toJson(QJsonDocument::Compact);
+
+    QNetworkAccessManager* manager = new QNetworkAccessManager(this);
+    QNetworkRequest request(QUrl("http://47.100.126.194:5000/getClassesByPrefix"));
+    request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+    QNetworkReply* reply = manager->post(request, reqData);
+    
+    connect(reply, &QNetworkReply::finished, this, [this, reply, manager]() {
+        if (reply->error() == QNetworkReply::NoError) {
+            QByteArray response_data = reply->readAll();
+            QJsonDocument respDoc = QJsonDocument::fromJson(response_data);
+            if (respDoc.isObject()) {
+                QJsonObject root = respDoc.object();
+                QJsonObject dataObj = root.value("data").toObject();
+                int code = dataObj.value("code").toInt();
+                QString message = dataObj.value("message").toString();
+                if (code != 200) {
+                    qWarning() << "获取班级列表失败:" << message;
+                    reply->deleteLater();
+                    manager->deleteLater();
+                    return;
+                }
+                QJsonArray classes = dataObj.value("classes").toArray();
+                
+                // 将班级列表添加到好友树的"班级"节点中
+                for (const QJsonValue& val : classes) {
+                    QJsonObject cls = val.toObject();
+                    QString stage = cls.value("school_stage").toString();
+                    QString grade = cls.value("grade").toString();
+                    QString className = cls.value("class_name").toString();
+                    QString classCode = cls.value("class_code").toString();
+                    
+                    // 验证班级代码不为空
+                    if (classCode.isEmpty()) {
+                        continue;
+                    }
+                    
+                    // 只显示已经加入的班级（在 m_setClassId 中的），跳过未加入的班级
+                    if (m_setClassId.find(classCode) == m_setClassId.end()) {
+                        continue; // 未加入的班级不显示
+                    }
+
+                    // 展示名称：学段+年级+班名 或 仅班名
+                    QString display = className.isEmpty() ? (grade.isEmpty() ? stage : (stage + grade)) : (stage + grade + className);
+                    
+                    // 验证显示名称不为空且长度合理
+                    if (display.trimmed().isEmpty() || display.trimmed().length() < 2) {
+                        continue;
+                    }
+                    
+                    // 添加到好友树的"班级"节点中（isClassGroup = false，因为这是班级，不是班级群）
+                    addClassNode(display, classCode, classCode, false, false);
+                }
+            }
+        } else {
+            qWarning() << "网络错误:" << reply->errorString();
+        }
+        reply->deleteLater();
+        manager->deleteLater();
+    });
+}
+
+void FriendGroupDialog::downloadGroupAvatar(const QString& faceUrl, const QString& groupId)
+{
+    if (faceUrl.isEmpty() || groupId.isEmpty()) {
+        return;
+    }
+    
+    // 检查是否是阿里云OSS地址
+    if (!faceUrl.contains("oss-cn-beijing.aliyuncs.com") && 
+        !faceUrl.contains("aliyuncs.com")) {
+        // 不是阿里云地址，跳过
+        return;
+    }
+    
+    // 检查是否已经下载过（文件已存在）
+    QString fileName = faceUrl.section('/', -1);
+    QString saveDir = QCoreApplication::applicationDirPath() + "/group_images/" + groupId;
+    QDir().mkpath(saveDir);
+    QString localPath = saveDir + "/" + fileName;
+    
+    // 如果文件已存在，直接更新界面显示
+    if (QFile::exists(localPath)) {
+        // 如果ScheduleDialog已打开，更新其头像显示
+        if (m_scheduleDlg.contains(groupId)) {
+            ScheduleDialog* dlg = m_scheduleDlg[groupId];
+            if (dlg) {
+                dlg->updateAvatarDisplay(localPath);
+            }
+        }
+        return;
+    }
+    
+    // 下载图片
+    if (!m_networkManager) {
+        m_networkManager = new QNetworkAccessManager(this);
+    }
+    
+    QUrl url(faceUrl);
+    QNetworkRequest request(url);
+    QNetworkReply* reply = m_networkManager->get(request);
+    
+    connect(reply, &QNetworkReply::finished, this, [this, reply, groupId, localPath, faceUrl]() {
+        if (reply->error() != QNetworkReply::NoError) {
+            qWarning() << "下载群组头像失败:" << reply->errorString() << "URL:" << faceUrl;
+            reply->deleteLater();
+            return;
+        }
+        
+        // 读取图片数据
+        QByteArray imageData = reply->readAll();
+        reply->deleteLater();
+        
+        if (imageData.isEmpty()) {
+            qWarning() << "下载的群组头像数据为空，URL:" << faceUrl;
+            return;
+        }
+        
+        // 保存到本地文件
+        QFile file(localPath);
+        if (!file.open(QIODevice::WriteOnly)) {
+            qWarning() << "无法创建群组头像文件:" << localPath;
+            return;
+        }
+        
+        file.write(imageData);
+        file.close();
+        
+        qDebug() << "群组头像下载成功，保存到:" << localPath;
+        
+        // 如果ScheduleDialog已打开，更新其头像显示
+        if (m_scheduleDlg.contains(groupId)) {
+            ScheduleDialog* dlg = m_scheduleDlg[groupId];
+            if (dlg) {
+                dlg->updateAvatarDisplay(localPath);
+            }
+        }
+    });
 }

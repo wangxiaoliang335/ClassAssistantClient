@@ -39,7 +39,7 @@ bool TACApp::AppInit()
 {
 	setQuitOnLastWindowClosed(false);
 	bool bLoginSucceeded = false;
-	QString qPhone;
+	QString classId;
 	loginWidget = new ModalDialog();
 	int user_id = 0;
 	//loginWidget->setTitleName("示例模态对话框");
@@ -116,7 +116,7 @@ bool TACApp::AppInit()
 					else
 					{
 						bLoginSucceeded = true;
-						qPhone = loginWidget->phoneNumber();
+						classId = loginWidget->phoneNumber();
 						user_id = loginWidget->getUserId();
 					}
 				}
@@ -134,7 +134,7 @@ bool TACApp::AppInit()
 			else
 			{
 				bLoginSucceeded = true;
-				qPhone = pwdLoginModalDialog->phoneNumber();
+				classId = pwdLoginModalDialog->phoneNumber();
 				user_id = pwdLoginModalDialog->getUserId();
 			}
 			return true;
@@ -164,7 +164,7 @@ bool TACApp::AppInit()
 			else
 			{
 				bLoginSucceeded = true;
-				qPhone = regDlg->phoneNumber();
+				classId = regDlg->phoneNumber();
 				user_id = regDlg->getUserId();
 			}
 			return true;
@@ -188,7 +188,7 @@ bool TACApp::AppInit()
 			else
 			{
 				bLoginSucceeded = true;
-				qPhone = resetPwdDlg->phoneNumber();
+				classId = resetPwdDlg->phoneNumber();
 			}
 			return true;
 		}
@@ -223,7 +223,7 @@ bool TACApp::AppInit()
 		else
 		{
 			bLoginSucceeded = true;
-			qPhone = loginWidget->phoneNumber();
+			classId = loginWidget->phoneNumber();
 			user_id = loginWidget->getUserId();
 		}
 	}
@@ -235,7 +235,7 @@ bool TACApp::AppInit()
 	if (bLoginSucceeded)
 	{
 		mainWindow = new TACMainDialog();
-		mainWindow->Init(qPhone, user_id);
+		mainWindow->Init(classId, user_id);
 		mainWindow->show();
 		return true;
 	}

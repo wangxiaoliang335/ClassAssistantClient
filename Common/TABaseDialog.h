@@ -7,6 +7,15 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QLabel>
+#include <QVector>
+
+// 老师任教信息（支持多条记录）
+typedef struct tagUserTeachingInfo {
+    QString grade_level;   // 学段，如"小学"
+    QString grade;         // 年级，如"三年级"
+    QString subject;       // 任教科目，如"数学"
+    QString class_taught;  // 任教班级，如"3-2"
+} UserTeachingInfo;
 
 typedef struct tagUserInfo {
     QString strUserId;
@@ -16,15 +25,15 @@ typedef struct tagUserInfo {
     QString strAddress;
     QString strSchoolName;
     QString strGradeLevel;
-    QString strGrade;
-    QString strSubject;
-    QString strClassTaught;
+    // 多条任教记录（teachings 列表）
+    QVector<UserTeachingInfo> teachings;
     QString strIsAdministrator;
     QString avatar;
     QString strIdNumber;
     QString strHeadImagePath;
-    QString teacher_unique_id;
+    //QString teacher_unique_id;
     QString schoolId;
+    QString classId;
 }UserInfo;
 
 class TABaseDialog  : public QWidget

@@ -22,6 +22,7 @@
 #include "TACWallpaperLibraryDialog.h"
 #include "TACHomeworkDialog.h"
 #include "TACIMDialog.h"
+#include "../Common/HomeworkViewDialog.h"
 #include "TACDesktopManagerWidget.h"
 #include "TACPrepareClassDialog.h"
 #include "TACClassWeekCourseScheduleDialog.h"
@@ -47,7 +48,7 @@ class TACMainDialog : public QDialog
 public:
 	TACMainDialog(QWidget *parent = nullptr);
 	~TACMainDialog();
-	void Init(QString qPhone, int user_id);
+	void Init(QString classId, int user_id);
 	bool InitSDK();
 	void Login(std::string userid);
 protected:
@@ -124,8 +125,12 @@ private:
 	QPointer<TACFolderDialog> folderDialog;
 	QPointer<TACWallpaperLibraryDialog> wallpaperLibraryDialog;
 	QPointer<TAUserMenuDialog> userMenuDlg;
-	QPointer<TACHomeworkDialog> homeworkDialog;
+	QPointer<TACHomeworkDialog> homeworkDialog; // 保留用于兼容
+	QPointer<HomeworkViewDialog> homeworkViewDialog; // 作业展示窗口（使用 ScheduleDialog 中的窗口）
 	QPointer<TACIMDialog> imDialog;
+	
+	// 作业缓存：按日期聚合 (date(yyyy-MM-dd) -> (subject -> content))
+	QMap<QString, QMap<QString, QString>> m_homeworkByDate;
 	QPointer<FriendGroupDialog> friendGrpDlg;
 
 	QPointer<AudioReceiver> m_audioReceiver;

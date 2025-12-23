@@ -26,7 +26,7 @@ TACTrayWidget::TACTrayWidget(QWidget *parent)
 	m_classInfoButton->setEnabled(false); // 默认禁用，等待用户信息加载后更新
 	layout->addWidget(m_classInfoButton);
 	
-	// ����������Lambda����Ϊ����¼�
+	// LambdaΪ¼
 	connect(m_classInfoButton, &QPushButton::toggled, this, [=](bool checked) {
 		emit navClassInfo(checked);
 		});
@@ -35,7 +35,7 @@ TACTrayWidget::TACTrayWidget(QWidget *parent)
 	layout->addWidget(m_desktopManagerButton);
 	m_desktopManagerButton->setCheckable(true);
 
-	// ����������Lambda����Ϊ����¼�
+	// LambdaΪ¼
 	connect(m_desktopManagerButton, &QPushButton::toggled, this, [=](bool checked) {
 		emit navDesktopManager(checked);
 	});
@@ -48,10 +48,10 @@ TACTrayWidget::TACTrayWidget(QWidget *parent)
 		emit navClassGroup(checked);
 	});
 
-	//QPushButton* countdowButton = new QPushButton("�Խ�", this);
+	//QPushButton* countdowButton = new QPushButton("Խ", this);
 	//layout->addWidget(countdowButton);
 
-	//QPushButton* timeButton = new QPushButton("��Ϣ", this);
+	//QPushButton* timeButton = new QPushButton("Ϣ", this);
 	//layout->addWidget(timeButton);
 
 	setLayout(layout);

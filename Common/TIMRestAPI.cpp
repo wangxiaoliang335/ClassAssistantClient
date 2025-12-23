@@ -301,9 +301,21 @@ void TIMRestAPI::createGroup(const QString& groupName, const QString& groupType,
         }
     }
 
-    // 群组简介和公告
-    requestBody["Introduction"] = QString("班级群：%1").arg(groupName);
-    requestBody["Notification"] = QString("欢迎加入%1").arg(groupName);
+    // 群组简介和公告（根据群类型给更贴合的文案）
+    if (groupType == "Public") {
+        requestBody["Introduction"] = QString("普通群：%1").arg(groupName);
+        requestBody["Notification"] = QString("欢迎加入%1").arg(groupName);
+    } else if (groupType == "Private") {
+        requestBody["Introduction"] = QString("私有群：%1").arg(groupName);
+        requestBody["Notification"] = QString("欢迎加入%1").arg(groupName);
+    } else if (groupType == "ChatRoom" || groupType == "AVChatRoom") {
+        requestBody["Introduction"] = QString("聊天室：%1").arg(groupName);
+        requestBody["Notification"] = QString("欢迎加入%1").arg(groupName);
+    } else {
+        // 其他/历史类型兜底
+        requestBody["Introduction"] = QString("群：%1").arg(groupName);
+        requestBody["Notification"] = QString("欢迎加入%1").arg(groupName);
+    }
 
     sendRestAPIRequest("group_open_http_svc/create_group", requestBody, callback);
 }
@@ -377,6 +389,19 @@ void TIMRestAPI::getGroupMemberList(const QString& groupId, int limit, int offse
     requestBody["GroupId"] = groupId;
     requestBody["Limit"] = limit;
     requestBody["Offset"] = offset;
+
+    // 显式指定需要返回的成员字段。
+    // 如果不传 MemberInfoFilter，服务端可能只返回基础字段，导致 NameCard（群名片）缺失，从而 UI 只能退回显示 Member_Account。
+    QJsonArray memberInfoFilter;
+    memberInfoFilter.append("Role");
+    memberInfoFilter.append("JoinTime");
+    memberInfoFilter.append("LastSendMsgTime");
+    memberInfoFilter.append("MsgFlag");
+    memberInfoFilter.append("MsgSeq");
+    memberInfoFilter.append("MuteUntil");
+    memberInfoFilter.append("NameCard");
+    memberInfoFilter.append("ShutUpUntil");
+    requestBody["MemberInfoFilter"] = memberInfoFilter;
 
     sendRestAPIRequest("group_open_http_svc/get_group_member_info", requestBody, callback);
 }

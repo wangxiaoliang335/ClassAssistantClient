@@ -472,8 +472,8 @@ std::string GenerateTestUserSig::getAdminUserId() const
 {
     // 从CommonInfo获取当前登录用户的teacher_unique_id作为管理员账号
     UserInfo userInfo = CommonInfo::GetData();
-    if (!userInfo.teacher_unique_id.isEmpty()) {
-        return userInfo.teacher_unique_id.toStdString();
+    if (!userInfo.classId.isEmpty()) {
+        return userInfo.classId.toStdString();
     }
     return std::string();  // 如果未设置，返回空字符串
 }

@@ -8,6 +8,9 @@
 #include <QSpacerItem>
 #include <QIcon>
 #include <QInputDialog>
+#include <QTableWidget>
+#include <QHeaderView>
+#include <QAbstractItemView>
 #include <QMessageBox>
 #include <QFileDialog>
 #include <qpainterpath.h>
@@ -17,10 +20,13 @@
 #include <QJsonDocument>  // JSON 文档（序列化/反序列化）
 #include <QJsonValue>     // JSON 值类型
 #include <qdebug.h>
+#include <QPointer>
+#include "CommonInfo.h"
 #include "TABaseDialog.h"
 #include "AvatarLabel.h"
 #include "NameLabel.h"
 #include "TAHttpHandler.h"
+#include "CommonInfo.h"
 
 class DraggableInputDialog : public QInputDialog
 {
@@ -181,13 +187,25 @@ public:
 
     void InitUI()
     {
+        // 任教信息区域：先整体隐藏（后续要启用再改为 true）
+        const bool kEnableTeachingsUI = false;
+
         // 隐藏标题栏（图片里没有标题栏）
         setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
         setAttribute(Qt::WA_TranslucentBackground);
-        setFixedSize(330, 360);
+        // 窗口大小：任教信息隐藏时用小窗口；启用时再扩展高度
+        if (kEnableTeachingsUI) {
+            setFixedSize(420, 620);
+        } else {
+            setFixedSize(330, 360);
+        }
 
         setWindowTitle("我的");
-        resize(350, 600);
+        if (kEnableTeachingsUI) {
+            resize(420, 620);
+        } else {
+            resize(330, 360);
+        }
         //setStyleSheet("background-color: #2a2a2a; color: white;");
 
         if (m_httpHandler)
@@ -222,9 +240,24 @@ public:
                                     m_userInfo.strAddress = oUserInfo.at(0)["address"].toString();
                                     m_userInfo.strSchoolName = oUserInfo.at(0)["school_name"].toString();
                                     m_userInfo.strGradeLevel = oUserInfo.at(0)["grade_level"].toString();
-                                    m_userInfo.strGrade = oUserInfo.at(0)["grade"].toString();
-                                    m_userInfo.strSubject = oUserInfo.at(0)["subject"].toString();
-                                    m_userInfo.strClassTaught = oUserInfo.at(0)["class_taught"].toString();
+                                    // 任教信息：优先读 teachings 数组（新模型）
+                                    if (oUserInfo.at(0).isObject() && oUserInfo.at(0).toObject().contains("teachings")
+                                        && oUserInfo.at(0).toObject().value("teachings").isArray()) {
+                                        QJsonArray teachingsArr = oUserInfo.at(0).toObject().value("teachings").toArray();
+                                        m_userInfo.teachings.clear();
+                                        for (const QJsonValue& v : teachingsArr) {
+                                            if (!v.isObject()) continue;
+                                            QJsonObject t = v.toObject();
+                                            UserTeachingInfo info;
+                                            info.grade_level = t.value("grade_level").toString();
+                                            info.grade = t.value("grade").toString();
+                                            info.subject = t.value("subject").toString();
+                                            info.class_taught = t.value("class_taught").toString();
+                                            m_userInfo.teachings.append(info);
+                                        }
+                                    } else {
+                                        m_userInfo.teachings.clear();
+                                    }
                                     m_userInfo.strIsAdministrator = oUserInfo.at(0)["is_administrator"].toString();
                                     m_userInfo.avatar = oUserInfo.at(0)["avatar"].toString();
                                     m_userInfo.strIdNumber = oUserInfo.at(0)["id_number"].toString();
@@ -546,16 +579,106 @@ public:
         addEditableField(QString::fromUtf8(u8"学段"), &UserInfo::strGradeLevel,
             QStringLiteral("http://47.100.126.194:5000/updateUserGradeLevel"), QStringLiteral("grade_level"), infoRow++);
 
-        infoLayout->addWidget(new QLabel(QString::fromUtf8(u8"年级")), infoRow, 0);
-        infoLayout->addWidget(new QLabel(m_userInfo.strGrade), infoRow, 1);
-        infoRow++;
+        // ===================== 任教信息（年级/任教科目/任教班级，多行） =====================
+        if (kEnableTeachingsUI) {
+            QLabel* teachLabel = new QLabel(QString::fromUtf8(u8"任教信息"));
+            teachLabel->setStyleSheet("color: #cccccc;");
+            infoLayout->addWidget(teachLabel, infoRow, 0, Qt::AlignTop);
 
-        infoLayout->addWidget(new QLabel(QString::fromUtf8(u8"任教学科")), infoRow, 0);
-        infoLayout->addWidget(new QLabel(m_userInfo.strSubject), infoRow, 1);
-        infoRow++;
+            QWidget* teachWidget = new QWidget(this);
+            QVBoxLayout* teachLayout = new QVBoxLayout(teachWidget);
+            teachLayout->setContentsMargins(0, 0, 0, 0);
+            teachLayout->setSpacing(6);
 
-        infoLayout->addWidget(new QLabel(QString::fromUtf8(u8"任教学段")), infoRow, 0);
-        infoLayout->addWidget(new QLabel(m_userInfo.strClassTaught), infoRow, 1);
+            m_teachingsTable = new QTableWidget(teachWidget);
+            m_teachingsTable->setColumnCount(3);
+            m_teachingsTable->setHorizontalHeaderLabels({
+                QString::fromUtf8(u8"年级"),
+                QString::fromUtf8(u8"任教科目"),
+                QString::fromUtf8(u8"任教班级")
+            });
+            m_teachingsTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+            m_teachingsTable->verticalHeader()->setVisible(false);
+            m_teachingsTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+            m_teachingsTable->setSelectionMode(QAbstractItemView::SingleSelection);
+            m_teachingsTable->setEditTriggers(QAbstractItemView::DoubleClicked | QAbstractItemView::EditKeyPressed);
+            m_teachingsTable->setMinimumHeight(180);
+            // 深灰主题（匹配窗口背景风格）
+            m_teachingsTable->setStyleSheet(
+                "QTableWidget {"
+                "  background-color: #5c5c5c;"
+                "  color: #ffffff;"
+                "  border: 1px solid rgba(255,255,255,0.12);"
+                "  gridline-color: rgba(255,255,255,0.10);"
+                "  selection-background-color: rgba(255,255,255,0.18);"
+                "  selection-color: #ffffff;"
+                "}"
+                "QHeaderView::section {"
+                "  background-color: #4f4f4f;"
+                "  color: #ffffff;"
+                "  padding: 4px 6px;"
+                "  border: 1px solid rgba(255,255,255,0.12);"
+                "}"
+                "QTableWidget::item {"
+                "  background-color: #5c5c5c;"
+                "  padding: 4px 6px;"
+                "}"
+                "QTableWidget::item:selected {"
+                "  background-color: rgba(25,118,210,0.55);"
+                "}"
+                "QTableCornerButton::section {"
+                "  background-color: #4f4f4f;"
+                "  border: 1px solid rgba(255,255,255,0.12);"
+                "}"
+            );
+            m_teachingsTable->setAlternatingRowColors(true);
+            m_teachingsTable->setShowGrid(true);
+
+            auto addTeachingRow = [this](const QString& grade, const QString& subject, const QString& classTaught) {
+                if (!m_teachingsTable) return;
+                const int r = m_teachingsTable->rowCount();
+                m_teachingsTable->insertRow(r);
+                m_teachingsTable->setItem(r, 0, new QTableWidgetItem(grade));
+                m_teachingsTable->setItem(r, 1, new QTableWidgetItem(subject));
+                m_teachingsTable->setItem(r, 2, new QTableWidgetItem(classTaught));
+            };
+
+            // 初始化：只使用多条任教记录（teachings）；若为空，则给一行空白供编辑
+            if (!m_userInfo.teachings.isEmpty()) {
+                for (const auto& t : m_userInfo.teachings) {
+                    addTeachingRow(t.grade, t.subject, t.class_taught);
+                }
+            } else {
+                addTeachingRow(QString(), QString(), QString());
+            }
+
+            QPushButton* btnAddTeachingRow = new QPushButton("+", teachWidget);
+            btnAddTeachingRow->setFixedSize(34, 28);
+            btnAddTeachingRow->setCursor(Qt::PointingHandCursor);
+            btnAddTeachingRow->setStyleSheet(
+                "QPushButton { background-color:#1976d2; color:white; border:none; border-radius:4px; font-weight:bold; }"
+                "QPushButton:hover { background-color:#1e88e5; }"
+            );
+            connect(btnAddTeachingRow, &QPushButton::clicked, this, [=]() {
+                addTeachingRow(QString(), QString(), QString());
+                int r = m_teachingsTable->rowCount() - 1;
+                if (r >= 0) {
+                    m_teachingsTable->setCurrentCell(r, 0);
+                    m_teachingsTable->editItem(m_teachingsTable->item(r, 0));
+                }
+            });
+
+            QHBoxLayout* teachBtnRow = new QHBoxLayout();
+            teachBtnRow->setContentsMargins(0, 0, 0, 0);
+            teachBtnRow->addStretch();
+            teachBtnRow->addWidget(btnAddTeachingRow);
+
+            teachLayout->addWidget(m_teachingsTable);
+            teachLayout->addLayout(teachBtnRow);
+
+            infoLayout->addWidget(teachWidget, infoRow, 1, 1, 3);
+            infoRow++;
+        } // kEnableTeachingsUI
 
         // ===================== 底部按钮 =====================
         QHBoxLayout* btnBottomLayout = new QHBoxLayout;
@@ -568,7 +691,110 @@ public:
         btnBottomLayout->addWidget(btnCancel);
         btnBottomLayout->addWidget(btnOk);
         connect(btnCancel, &QPushButton::clicked, this, &QDialog::reject);
-        connect(btnOk, &QPushButton::clicked, this, &QDialog::accept);
+        connect(btnOk, &QPushButton::clicked, this, [this, btnOk, kEnableTeachingsUI]() {
+            if (!kEnableTeachingsUI) {
+                // 任教信息功能暂时隐藏，不提交 teachings，直接关闭
+                accept();
+                return;
+            }
+
+            // 收集任教信息表格 -> teachings[]，并调用 /updateUserTeachings（替换整份列表）
+            if (!m_teachingsTable) {
+                accept();
+                return;
+            }
+
+            QJsonArray teachings;
+            for (int r = 0; r < m_teachingsTable->rowCount(); ++r) {
+                auto cellText = [&](int c) -> QString {
+                    QTableWidgetItem* it = m_teachingsTable->item(r, c);
+                    return it ? it->text().trimmed() : QString();
+                };
+                QString grade = cellText(0);
+                QString subject = cellText(1);
+                QString classTaught = cellText(2);
+
+                // 空行跳过
+                if (grade.isEmpty() && subject.isEmpty() && classTaught.isEmpty()) {
+                    continue;
+                }
+                // 半空行提示（避免写入脏数据）
+                if (grade.isEmpty() || subject.isEmpty() || classTaught.isEmpty()) {
+                    QMessageBox::warning(this, QString::fromUtf8(u8"提示"),
+                        QString::fromUtf8(u8"第 %1 行任教信息不完整，请补全“年级/任教科目/任教班级”。").arg(r + 1));
+                    return;
+                }
+
+                QJsonObject item;
+                item["grade_level"] = m_userInfo.strGradeLevel.trimmed(); // 统一使用当前“学段”
+                item["grade"] = grade;
+                item["subject"] = subject;
+                item["class_taught"] = classTaught;
+                teachings.append(item);
+            }
+
+            if (teachings.isEmpty()) {
+                QMessageBox::warning(this, QString::fromUtf8(u8"提示"), QString::fromUtf8(u8"请至少填写一条任教信息。"));
+                return;
+            }
+            if (m_userInfo.strPhone.trimmed().isEmpty()) {
+                QMessageBox::warning(this, QString::fromUtf8(u8"提示"), QString::fromUtf8(u8"用户手机号为空，无法提交任教信息。"));
+                return;
+            }
+
+            // 回写内存态：任教信息以 teachings[] 为准（多条）
+            m_userInfo.teachings.clear();
+            for (const QJsonValue& v : teachings) {
+                if (!v.isObject()) continue;
+                QJsonObject t = v.toObject();
+                UserTeachingInfo info;
+                info.grade_level = t.value("grade_level").toString();
+                info.grade = t.value("grade").toString();
+                info.subject = t.value("subject").toString();
+                info.class_taught = t.value("class_taught").toString();
+                m_userInfo.teachings.append(info);
+            }
+
+            QJsonObject payload;
+            payload["phone"] = m_userInfo.strPhone.trimmed();
+            payload["teachings"] = teachings;
+            QByteArray jsonData = QJsonDocument(payload).toJson(QJsonDocument::Compact);
+
+            btnOk->setEnabled(false);
+
+            // 使用独立的 handler，避免与头像/姓名等更新请求混淆
+            TAHttpHandler* h = new TAHttpHandler(this);
+            QPointer<UserInfoDialog> self(this);
+            QObject::connect(h, &TAHttpHandler::success, this, [self, h, btnOk](const QString& response) {
+                if (h) h->deleteLater();
+                if (!self) return;
+                btnOk->setEnabled(true);
+
+                QJsonParseError err;
+                QJsonDocument doc = QJsonDocument::fromJson(response.toUtf8(), &err);
+                if (err.error == QJsonParseError::NoError && doc.isObject()) {
+                    QJsonObject obj = doc.object();
+                    int code = obj.value("code").toInt(-1);
+                    if (obj.contains("data") && obj.value("data").isObject()) {
+                        code = obj.value("data").toObject().value("code").toInt(code);
+                    }
+                    if (code == 200 || code == 0) {
+                        CommonInfo::InitData(self->m_userInfo);
+                        self->accept();
+                        return;
+                    }
+                }
+                QMessageBox::warning(self, QString::fromUtf8(u8"更新失败"), QString::fromUtf8(u8"任教信息更新失败，请稍后重试。"));
+            });
+            QObject::connect(h, &TAHttpHandler::failed, this, [self, h, btnOk](const QString&) {
+                if (h) h->deleteLater();
+                if (!self) return;
+                btnOk->setEnabled(true);
+                QMessageBox::warning(self, QString::fromUtf8(u8"网络错误"), QString::fromUtf8(u8"任教信息更新失败，请检查网络后重试。"));
+            });
+
+            h->post(QStringLiteral("http://47.100.126.194:5000/updateUserTeachings"), jsonData);
+        });
 
         // ===================== 底部工具栏 =====================
         //QHBoxLayout* toolLayout = new QHBoxLayout;
@@ -709,6 +935,7 @@ public:
     AvatarLabel* avatarLabel = NULL;
     NameLabel* nameLabel = NULL;
     TAHttpHandler* m_httpHandler = NULL;
+    QTableWidget* m_teachingsTable = nullptr;
 
 private:
     QMap<QString, QString> buildUserInfoParams() const
@@ -721,9 +948,7 @@ private:
         params["address"] = m_userInfo.strAddress;
         params["school_name"] = m_userInfo.strSchoolName;
         params["grade_level"] = m_userInfo.strGradeLevel;
-        params["grade"] = m_userInfo.strGrade;
-        params["subject"] = m_userInfo.strSubject;
-        params["class_taught"] = m_userInfo.strClassTaught;
+        // 任教信息已迁移到 /updateUserTeachings，不再通过 /updateUserInfo 传 grade/subject/class_taught
         params["is_administrator"] = m_userInfo.strIsAdministrator;
         params["id_number"] = m_userInfo.strIdNumber;
         return params;

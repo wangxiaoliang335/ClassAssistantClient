@@ -40,12 +40,12 @@
   </ImportGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="QtSettings">
     <QtInstall>D:\Qt\5.15.2\msvc2019_64</QtInstall>
-    <QtModules>core;network;gui;widgets;websockets;multimedia</QtModules>
+    <QtModules>core;network;gui;widgets;websockets;multimedia;printsupport;charts</QtModules>
     <QtBuildConfig>debug</QtBuildConfig>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="QtSettings">
     <QtInstall>C:\Qt\5.15.2\msvc2019_64</QtInstall>
-    <QtModules>core;network;gui;widgets;websockets</QtModules>
+    <QtModules>core;network;gui;widgets;websockets;printsupport;charts</QtModules>
     <QtBuildConfig>release</QtBuildConfig>
   </PropertyGroup>
   <Target Name="QtMsBuildNotFound" BeforeTargets="CustomBuild;ClCompile" Condition="!Exists('$(QtMsBuild)\qt.targets') or !Exists('$(QtMsBuild)\qt.props')">
@@ -105,6 +105,10 @@
     <ClCompile Include="main.cpp" />
     <ClCompile Include="TACApp.cpp" />
     <ClCompile Include="TACClassWeekCourseScheduleDialog.cpp" />
+    <ClCompile Include="schedulecelllabel.cpp" />
+    <ClCompile Include="termsettingsdialog.cpp" />
+    <ClCompile Include="courseeditdialog.cpp" />
+    <ClCompile Include="mainwindow.cpp" />
     <ClCompile Include="TACCountDownDialog.cpp" />
     <ClCompile Include="TACCourseSchedule.cpp" />
     <ClCompile Include="TACDateTimeDialog.cpp" />
@@ -128,10 +132,15 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="common.h" />
+    <ClInclude Include="TACTeacherCourseScheduleWindow.h" />
     <QtMoc Include="TACLoginDialog.h" />
     <QtMoc Include="TACTrayWidget.h" />
     <QtMoc Include="TACToolWidget.h" />
     <QtMoc Include="TACClassWeekCourseScheduleDialog.h" />
+    <QtMoc Include="mainwindow.h" />
+    <QtMoc Include="schedulecelllabel.h" />
+    <QtMoc Include="termsettingsdialog.h" />
+    <QtMoc Include="courseeditdialog.h" />
     <QtMoc Include="TACPrepareClassDialog.h" />
     <QtMoc Include="TACDesktopManagerWidget.h" />
     <QtMoc Include="TACIMDialog.h" />

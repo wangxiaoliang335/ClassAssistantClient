@@ -20,6 +20,8 @@ public:
 signals:
 	void newMessage(QString msg);
 	void newBinaryMessage(const QByteArray& msg);
+	void homeworkReceived(const QJsonObject& homeworkData); // 家庭作业消息信号
+	void notificationReceived(const QJsonObject& notificationData); // 通知消息信号
 
 private slots:
 	void onConnected();

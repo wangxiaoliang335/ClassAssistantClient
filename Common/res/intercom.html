@@ -148,74 +148,63 @@
 			white-space: nowrap;
 		}
 		
-		.chat-section {
+		.status-section {
 			padding: 20px;
-			max-height: 400px;
-			overflow-y: auto;
 			border-bottom: 1px solid #4C4C4C;
 		}
 		
-		.message {
-			display: flex;
-			gap: 12px;
-			margin-bottom: 20px;
+		.status-title {
+			color: white;
+			font-size: 14px;
+			margin-bottom: 10px;
 		}
 		
-		.message-avatar {
-			width: 40px;
-			height: 40px;
-			border-radius: 50%;
-			background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-			flex-shrink: 0;
+		.status-log {
+			max-height: 260px;
+			overflow-y: auto;
+			background: #2C2C2C;
+			border: 1px solid #4C4C4C;
+			border-radius: 8px;
+			padding: 15px;
 		}
 		
-		.message-content {
-			flex: 1;
-		}
-		
-		.message-header {
-			display: flex;
-			gap: 8px;
-			align-items: center;
-			margin-bottom: 5px;
-		}
-		
-		.message-sender {
-			color: #9E9E9E;
+		.status-entry {
+			padding: 10px 12px;
+			border-radius: 6px;
 			font-size: 13px;
-			font-weight: 500;
-		}
-		
-		.message-bubble {
-			background: #4C4C4C;
-			color: white;
-			padding: 10px 15px;
-			border-radius: 8px;
-			font-size: 14px;
 			line-height: 1.5;
-			max-width: 70%;
-		}
-		
-		.input-section {
-			padding: 15px 20px;
-			display: flex;
-			gap: 10px;
-			align-items: center;
-		}
-		
-		.input-field {
-			flex: 1;
-			background: #4C4C4C;
-			border: none;
 			color: white;
-			padding: 12px 15px;
-			border-radius: 8px;
-			font-size: 14px;
-			outline: none;
+			margin-bottom: 10px;
+			background: rgba(255, 255, 255, 0.05);
 		}
 		
-		.input-field::placeholder {
-			color: #9E9E9E;
+		.status-entry.info {
+			border-left: 3px solid #2196F3;
+		}
+		
+		.status-entry.success {
+			border-left: 3px solid #4CAF50;
+		}
+		
+		.status-entry.error {
+			border-left: 3px solid #f44336;
+		}
+		
+		.status-entry.warn {
+			border-left: 3px solid #FF9800;
+		}
+		
+		.voice-section {
+			padding: 20px;
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			gap: 12px;
+		}
+		
+		.voice-hint {
+			color: #cccccc;
+			font-size: 12px;
 		}
 		
 		.voice-btn {
@@ -231,26 +220,45 @@
 			align-items: center;
 			justify-content: center;
 			transition: background 0.2s;
+			user-select: none;
 		}
 		
 		.voice-btn:hover {
 			background: #0056CC;
 		}
 		
-		.voice-btn::before {
+		.voice-btn.active {
+			background: #f44336;
+			animation: pulse 1s infinite;
+		}
+		
+		.voice-btn.active::before {
+			content: "🎤";
+		}
+		
+		.voice-btn:not(.active)::before {
 			content: "🔊";
 		}
 		
+		@keyframes pulse {
+			0%, 100% {
+				transform: scale(1);
+			}
+			50% {
+				transform: scale(1.1);
+			}
+		}
+		
 		/* 滚动条样式 */
-		.chat-section::-webkit-scrollbar {
+		.status-log::-webkit-scrollbar {
 			width: 6px;
 		}
 		
-		.chat-section::-webkit-scrollbar-track {
+		.status-log::-webkit-scrollbar-track {
 			background: #2C2C2C;
 		}
 		
-		.chat-section::-webkit-scrollbar-thumb {
+		.status-log::-webkit-scrollbar-thumb {
 			background: #5C5C5C;
 			border-radius: 3px;
 		}
@@ -292,30 +300,16 @@
 			</div>
 		</div>
 		
-		<div class="chat-section" id="chatSection">
-			<div class="message">
-				<div class="message-avatar"></div>
-				<div class="message-content">
-					<div class="message-header">
-						<span class="message-sender">班主任</span>
-					</div>
-					<div class="message-bubble">李老师,今天家里有事,我们调一下课吧</div>
-				</div>
-			</div>
-			<div class="message">
-				<div class="message-avatar"></div>
-				<div class="message-content">
-					<div class="message-header">
-						<span class="message-sender">语文老师</span>
-					</div>
-					<div class="message-bubble">可以</div>
-				</div>
+		<div class="status-section">
+			<div class="status-title">语音对讲状态</div>
+			<div class="status-log" id="statusLog">
+				<div class="status-entry info">✅ 正在准备语音对讲，请稍候...</div>
 			</div>
 		</div>
 		
-		<div class="input-section">
-			<input type="text" class="input-field" placeholder="请输入文字...">
+		<div class="voice-section">
 			<button class="voice-btn"></button>
+			<div class="voice-hint">按住按钮开始对讲，松开按钮停止</div>
 		</div>
 	</div>
 	
@@ -327,19 +321,52 @@
 		const membersData = appData.members || [];
 		const currentUser = appData.current_user || {};
 		const groupId = appData.group_id || '';  // 班级群的唯一编号
+		
+		// 从 temp_room 对象中读取临时房间信息（新格式）
+		let roomId = null;
+		let whipUrl = null;
+		let whepUrl = null;
+		let streamName = null;
+		
+		if (appData.temp_room && typeof appData.temp_room === 'object') {
+			roomId = appData.temp_room.room_id || null;
+			whipUrl = appData.temp_room.whip_url || null;
+			whepUrl = appData.temp_room.whep_url || null;
+			streamName = appData.temp_room.stream_name || null;
+		} else {
+			// 兼容旧格式：直接从 appData 读取 room_id
+			roomId = appData.room_id || null;
+		}
+		
 		console.log('当前用户信息:', currentUser);
 		console.log('用户ID值:', currentUser.id, '类型:', typeof currentUser.id);
 		console.log('班级群唯一编号:', groupId);
+		console.log('临时房间信息:');
+		console.log('  房间ID:', roomId);
+		console.log('  推流地址:', whipUrl);
+		console.log('  拉流地址:', whepUrl);
+		console.log('  流名称:', streamName);
 		
 		// WebSocket连接
 		let ws = null;
-		let roomId = null;
+		const statusLog = document.getElementById('statusLog');
 		
-		// SRS WHIP 音频推送配置
-		const BASE = 'https://47.100.126.194'; // SRS服务器地址
-		const APP = 'live';
+		// WebRTC 配置
 		const iceServers = [{ urls: ['stun:stun.l.google.com:19302'] }];
 		let publishPc = null; // 推送音频的 PeerConnection
+		let publishStream = null; // 推流方媒体流
+		let subscribePc = null; // 拉流的 PeerConnection
+		let subscribeStream = null; // 拉流方媒体流
+		let roomInfo = null; // 房间信息
+		
+		function appendStatusMessage(message, type = 'info') {
+			if (!statusLog) return;
+			const entry = document.createElement('div');
+			entry.className = `status-entry ${type}`;
+			entry.textContent = `${new Date().toLocaleTimeString()}  ${message}`;
+			statusLog.appendChild(entry);
+			statusLog.scrollTop = statusLog.scrollHeight;
+		}
 		
 		// 渲染参与者列表
 		function renderParticipants() {
@@ -421,9 +448,66 @@
 			console.log('WebSocket对象已创建，状态:', ws.readyState);
 			
 			ws.onopen = function() {
-				console.log('WebSocket连接已建立');
-				// 连接成功后发送创建房间消息
-				createRoom();
+				console.log('========== WebSocket连接成功 ==========');
+				console.log('✅ [WebSocket] 连接已建立');
+				console.log('   - WebSocket URL:', wsUrl);
+				console.log('   - 连接状态:', ws.readyState);
+				console.log('   - 协议:', ws.protocol);
+				
+				// 更新连接状态
+				const statusInfo = document.getElementById('connectionStatus');
+				if (statusInfo) {
+					statusInfo.textContent = '✅ WebSocket已连接，正在获取麦克风权限...';
+				}
+				
+				// 如果房间ID已从C++传入，更新房间信息；否则等待服务器返回room_created消息
+				console.log('🔍 [WebSocket] 检查房间信息:');
+				console.log('   - roomId:', roomId);
+				console.log('   - whepUrl:', whepUrl);
+				console.log('   - whipUrl:', whipUrl);
+				console.log('   - streamName:', streamName);
+				
+				if (roomId) {
+					console.log('✅ [WebSocket] 房间ID已从C++传入');
+					console.log('   - 房间ID:', roomId);
+					console.log('   - 推流地址:', whipUrl);
+					console.log('   - 拉流地址:', whepUrl);
+					console.log('   - 流名称:', streamName);
+					// 更新房间信息
+					roomInfo = {
+						room_id: roomId,
+						whip_url: whipUrl,
+						whep_url: whepUrl,
+						stream_name: streamName,
+						group_id: groupId
+					};
+					// 在页面上显示房间信息
+					appendStatusMessage(`✅ 房间已创建，ID: ${roomId}。`, 'success');
+					
+					// 房间创建成功后，开始拉流
+					if (whepUrl) {
+						console.log('🎧 [拉流] 房间已创建，开始拉流...');
+						startPullStream(whepUrl);
+					} else {
+						console.warn('⚠️ [拉流] 拉流地址为空，无法开始拉流');
+						appendStatusMessage('⚠️ 拉流地址为空，无法开始拉流', 'warning');
+					}
+				} else {
+					console.log('⚠️ [WebSocket] 房间ID未传入，等待服务器返回room_created消息');
+				}
+				
+				// WebSocket连接成功后，预先请求麦克风权限（避免按住按钮时弹出权限对话框）
+				console.log('🎤 [WebSocket] 开始预先获取麦克风权限...');
+				requestMicrophonePermission().then(() => {
+					const statusInfo = document.getElementById('connectionStatus');
+					if (statusInfo) {
+						statusInfo.textContent = '✅ WebSocket已连接，麦克风已就绪，请按住"按住开始对讲"按钮开始推流';
+					}
+					console.log('========== WebSocket初始化完成 ==========');
+				}).catch(error => {
+					console.error('❌ [WebSocket] 获取麦克风权限失败:', error);
+					console.log('========== WebSocket初始化完成（权限获取失败） ==========');
+				});
 			};
 			
 			ws.onmessage = function(event) {
@@ -450,212 +534,465 @@
 			};
 			
 			ws.onerror = function(error) {
-				console.error('WebSocket错误:', error);
+				console.error('========== WebSocket错误 ==========');
+				console.error('❌ [WebSocket错误] 错误详情:');
+				console.error('   - 错误对象:', error);
+				console.error('   - WebSocket状态:', ws.readyState);
 				// 显示错误信息给用户
-				const chatSection = document.getElementById('chatSection');
-				if (chatSection) {
-					const errorMsg = document.createElement('div');
-					errorMsg.className = 'message';
-					errorMsg.innerHTML = '<div class="message-content"><div class="message-bubble" style="background: #f44336; color: white;">⚠️ WebSocket连接失败，请检查网络连接或联系管理员</div></div>';
-					chatSection.appendChild(errorMsg);
-				}
+				appendStatusMessage('⚠️ WebSocket连接失败，请检查网络或联系管理员。', 'error');
+				console.log('========== WebSocket错误处理完成 ==========');
 			};
 			
 			ws.onclose = function(event) {
-				console.log('WebSocket连接已关闭', '代码:', event.code, '原因:', event.reason);
+				console.log('========== WebSocket连接关闭 ==========');
+				console.log('🔌 [WebSocket关闭] 连接已关闭');
+				console.log('   - 关闭代码:', event.code);
+				console.log('   - 关闭原因:', event.reason);
+				console.log('   - 是否正常关闭:', event.wasClean);
 				// 如果是因为403错误关闭，显示错误信息
 				if (event.code === 1006 || event.code === 403) {
-					const chatSection = document.getElementById('chatSection');
-					if (chatSection) {
-						const errorMsg = document.createElement('div');
-						errorMsg.className = 'message';
-						errorMsg.innerHTML = '<div class="message-content"><div class="message-bubble" style="background: #f44336; color: white;">❌ 连接被服务器拒绝（403），可能是认证失败</div></div>';
-						chatSection.appendChild(errorMsg);
-					}
+					console.error('❌ [WebSocket关闭] 连接被服务器拒绝，可能是认证失败');
+					appendStatusMessage('❌ 连接被服务器拒绝，可能是认证失败。', 'error');
+				}
+				console.log('========== WebSocket关闭处理完成 ==========');
+			};
+		}
+		
+		// 注意：createRoom() 函数已移除，房间创建现在由C++端的ScheduleDialog在初始化时完成
+		// 如果房间ID已从C++传入，则直接使用；否则等待服务器返回room_created消息
+		
+		// 设置 ICE candidate 处理（传统 API 方式，ICE candidate 自动处理）
+		function setupIceCandidate(pc) {
+			pc.onicecandidate = e => {
+				if (e.candidate) {
+					console.log("📡 ICE candidate:", e.candidate.candidate);
+				} else {
+					console.log("✅ ICE候选收集完成");
 				}
 			};
 		}
 		
-		// 创建房间
-		function createRoom() {
-			console.log('=== createRoom 函数被调用 ===');
-			console.log('WebSocket状态检查 - ws对象:', ws);
-			console.log('WebSocket状态检查 - readyState:', ws ? ws.readyState : 'ws为null');
+		// 开始拉流（参考推流的方式，通过WebSocket发送offer）
+		async function startPullStream(whepUrl) {
+			if (!whepUrl) {
+				console.error('❌ [拉流] 拉流地址为空');
+				appendStatusMessage('❌ 拉流地址为空，无法开始拉流', 'error');
+				return;
+			}
+			
+			if (!roomInfo) {
+				console.error('❌ [拉流] 房间信息为空');
+				appendStatusMessage('❌ 房间信息为空，无法开始拉流', 'error');
+				return;
+			}
 			
 			if (!ws || ws.readyState !== WebSocket.OPEN) {
-				console.error('❌ WebSocket未连接，无法创建房间');
-				console.error('ws存在:', !!ws);
-				console.error('readyState:', ws ? ws.readyState : 'N/A');
-				console.error('WebSocket.OPEN常量值:', WebSocket.OPEN);
+				console.error('❌ [拉流] WebSocket未连接');
+				appendStatusMessage('❌ WebSocket未连接，无法开始拉流', 'error');
 				return;
 			}
 			
-			console.log('✅ WebSocket连接正常，开始创建房间');
-			
-			// 生成房间ID（使用时间戳）
-			roomId = 'room_' + Date.now();
-			console.log('生成房间ID:', roomId);
-			
-			// 验证群组ID是否存在（在创建消息之前验证）
-			console.log('检查群组ID - groupId变量:', groupId);
-			console.log('检查群组ID - groupId类型:', typeof groupId);
-			console.log('检查群组ID - groupId长度:', groupId ? groupId.length : 'undefined');
-			console.log('检查群组ID - appData.group_id:', appData.group_id);
-			
-			if (!groupId || groupId.length === 0) {
-				console.error('❌ 错误：班级群唯一编号为空，无法创建临时房间！');
-				console.error('appData完整内容:', JSON.stringify(appData));
-				const chatSection = document.getElementById('chatSection');
-				if (chatSection) {
-					const errorMsg = document.createElement('div');
-					errorMsg.className = 'message';
-					errorMsg.innerHTML = '<div class="message-content"><div class="message-bubble" style="background: #f44336; color: white;">❌ 错误：班级群唯一编号为空，无法创建临时房间！</div></div>';
-					chatSection.appendChild(errorMsg);
-					chatSection.scrollTop = chatSection.scrollHeight;
-				}
-				return;
+			if (subscribePc) {
+				console.log('⚠️ [拉流] 已经在拉流中，先停止之前的拉流');
+				stopPullStream();
 			}
 			
-			console.log('✅ 群组ID验证通过:', groupId);
-			
-			// 生成stream_url：使用班级群唯一编号作为stream参数
-			// 格式：https://47.100.126.194/rtc/v1/whep/?app=live&stream=<班级群的唯一编号>
-			const streamUrl = `https://47.100.126.194/rtc/v1/whep/?app=live&stream=${groupId}`;
-			console.log('生成stream_url:', streamUrl);
-			console.log('stream参数（班级群唯一编号）:', groupId);
-			
-			// 构建创建房间的消息
-			const createRoomMessage = {
-				type: "6",
-				invited_users: [],  // 初始为空数组
-				stream_url: streamUrl,
-				owner_name: currentUser.name || "用户",
-				group_id: groupId  // 班级群的唯一编号
-			};
-			
-			console.log('班级群唯一编号:', groupId);
-			console.log('班级群唯一编号长度:', groupId.length);
-			
-			console.log('========================================');
-			console.log('📤 准备发送创建房间消息:');
-			console.log('完整消息对象:', createRoomMessage);
-			console.log('消息JSON字符串:', JSON.stringify(createRoomMessage));
-			console.log('group_id字段值:', createRoomMessage.group_id);
-			console.log('========================================');
+			console.log('========== 开始拉流 ==========');
+			console.log('🎧 [拉流] 开始拉流，拉流地址:', whepUrl);
+			appendStatusMessage('🎧 正在开始拉流...', 'info');
 			
 			try {
-				// 发送消息（直接发送JSON格式）
-				const messageString = JSON.stringify(createRoomMessage);
-				ws.send(messageString);
+				// 创建拉流的 PeerConnection
+				subscribePc = new RTCPeerConnection({ iceServers });
+				subscribeStream = null;
 				
-				console.log('✅ 创建房间消息已发送成功！');
-				console.log('发送的消息字符串:', messageString);
-				console.log('发送时的WebSocket状态:', ws.readyState);
+				// 设置ICE candidate处理
+				setupIceCandidate(subscribePc);
+				console.log('✅ [拉流] ICE candidate 处理已设置');
 				
-				// 在页面上显示发送成功的信息
-				const chatSection = document.getElementById('chatSection');
-				if (chatSection) {
-					const successMsg = document.createElement('div');
-					successMsg.className = 'message';
-					successMsg.innerHTML = '<div class="message-content"><div class="message-bubble" style="background: #4CAF50; color: white;">✅ 创建房间消息已发送: ' + roomId + '</div></div>';
-					chatSection.appendChild(successMsg);
-					chatSection.scrollTop = chatSection.scrollHeight;
-				}
-			} catch (error) {
-				console.error('❌ 发送创建房间消息失败:', error);
-				console.error('错误详情:', error.message);
-				console.error('错误堆栈:', error.stack);
-				
-				// 在页面上显示发送失败的信息
-				const chatSection = document.getElementById('chatSection');
-				if (chatSection) {
-					const errorMsg = document.createElement('div');
-					errorMsg.className = 'message';
-					errorMsg.innerHTML = '<div class="message-content"><div class="message-bubble" style="background: #f44336; color: white;">❌ 发送创建房间消息失败: ' + error.message + '</div></div>';
-					chatSection.appendChild(errorMsg);
-				}
-			}
-		}
-		
-		// 等 ICE 完成（从 audio_ext_whip.html 提取）
-		async function gatherComplete(pc) {
-			if (pc.iceGatheringState === 'complete') return;
-			await new Promise(resolve => {
-				const checkState = () => {
-					if (pc.iceGatheringState === 'complete') {
-						pc.removeEventListener('icegatheringstatechange', checkState);
-						resolve();
+				// 监听连接状态变化
+				subscribePc.onconnectionstatechange = () => {
+					console.log('📡 [拉流] 连接状态:', subscribePc.connectionState);
+					if (subscribePc.connectionState === 'connected') {
+						console.log('✅ [拉流] 拉流连接成功');
+						appendStatusMessage('✅ 拉流连接成功', 'success');
+					} else if (subscribePc.connectionState === 'failed' || subscribePc.connectionState === 'disconnected') {
+						console.error('❌ [拉流] 拉流连接失败或断开');
+						appendStatusMessage(`❌ 拉流连接${subscribePc.connectionState}`, 'error');
 					}
 				};
-				pc.addEventListener('icegatheringstatechange', checkState);
-			});
+				
+				// 监听接收到的媒体流
+				subscribePc.ontrack = (event) => {
+					console.log('🎧 [拉流] 收到音频流');
+					subscribeStream = event.streams[0];
+					
+					// 创建音频元素并播放
+					const audioElement = document.createElement('audio');
+					audioElement.srcObject = subscribeStream;
+					audioElement.autoplay = true;
+					audioElement.controls = false;
+					audioElement.style.display = 'none';
+					document.body.appendChild(audioElement);
+					
+					console.log('✅ [拉流] 音频流已开始播放');
+					appendStatusMessage('✅ 音频流已开始播放', 'success');
+				};
+				
+				// 创建 offer（参考推流的方式）
+				console.log('📤 [拉流] 正在创建 SDP offer...');
+				const offer = await subscribePc.createOffer({
+					offerToReceiveAudio: true,
+					offerToReceiveVideo: false
+				});
+				console.log('✅ [拉流] SDP offer 创建成功');
+				console.log('   - Offer类型:', offer.type);
+				console.log('   - SDP长度:', offer.sdp ? offer.sdp.length : 0);
+				
+				await subscribePc.setLocalDescription(offer);
+				console.log('✅ [拉流] 本地描述已设置');
+				console.log('   - LocalDescription类型:', subscribePc.localDescription.type);
+				console.log('   - ConnectionState:', subscribePc.connectionState);
+				
+				// 构建流名称（优先使用 stream_name，否则使用 room_id）
+				const streamName = roomInfo.stream_name || roomInfo.room_id;
+				console.log('📤 [拉流] 准备发送拉流请求到服务器...');
+				console.log('   - 流名称:', streamName);
+				console.log('   - 房间ID:', roomInfo.room_id);
+				console.log('   - 群组ID:', roomInfo.group_id);
+				
+				// 通过 WebSocket 发送 offer 到服务器，服务器转发给 SRS（参考推流的方式）
+				const message = {
+					type: "srs_play_offer",
+					sdp: subscribePc.localDescription.sdp,
+					stream_name: streamName,
+					room_id: roomInfo.room_id,
+					group_id: roomInfo.group_id
+				};
+				
+				ws.send(JSON.stringify(message));
+				console.log('✅ [拉流] 拉流 offer 已发送到服务器');
+				console.log('   - 消息类型:', message.type);
+				console.log('   - 流名称:', message.stream_name);
+				console.log('   - 房间ID:', message.room_id);
+				console.log('   - 群组ID:', message.group_id);
+				console.log('   - SDP长度:', message.sdp ? message.sdp.length : 0);
+				
+				// 在页面上显示发送信息
+				appendStatusMessage(`📤 正在发送拉流请求... Stream: ${streamName}`, 'info');
+				console.log('========== 拉流请求已发送，等待服务器响应 ==========');
+				
+			} catch (error) {
+				console.error('========== 拉流失败 ==========');
+				console.error('❌ [拉流失败] 错误详情:');
+				console.error('   - 错误类型:', error.name);
+				console.error('   - 错误消息:', error.message);
+				console.error('   - 错误堆栈:', error.stack);
+				console.error('   - 完整错误:', error);
+				
+				appendStatusMessage(`❌ 拉流失败: ${error.message}`, 'error');
+				console.log('========== 拉流失败处理完成 ==========');
+				
+				// 清理资源
+				if (subscribePc) {
+					subscribePc.close();
+					subscribePc = null;
+				}
+			}
 		}
 		
-		// 推送音频到SRS服务器（从 audio_ext_whip.html 提取）
-		async function whipPublishAudio() {
-			console.log("🎤 开始 WHIP 音频推流...");
-			
-			if (!groupId || groupId.length === 0) {
-				console.error('❌ 无法推送音频：groupId 为空');
+		// 停止拉流
+		function stopPullStream() {
+			if (!subscribePc) {
 				return;
 			}
 			
-			// 使用 groupId 作为 stream 参数
-			const STREAM = groupId;
-			const WHIP_URL = `${BASE}/rtc/v1/whip/?app=${APP}&stream=${STREAM}`;
-			console.log('WHIP URL:', WHIP_URL);
-			console.log('Stream参数（班级群唯一编号）:', STREAM);
+			console.log('🛑 [拉流] 停止拉流');
+			appendStatusMessage('🛑 正在停止拉流...', 'info');
 			
-			try {
-				const pc = new RTCPeerConnection({ iceServers, sdpSemantics: 'unified-plan' });
-				publishPc = pc;
-				window._pubPc = pc;
-
-				// 只采集音频，不采视频
-				const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-				console.log("🎤 已获取麦克风音频流", stream);
-
-				stream.getTracks().forEach(track => {
-					console.log("➕ 添加音频轨道", track);
-					pc.addTrack(track, stream);
-				});
-
-				const offer = await pc.createOffer();
-				await pc.setLocalDescription(offer);
-				await gatherComplete(pc);
-
-				const res = await fetch(WHIP_URL, {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/sdp' },
-					body: pc.localDescription.sdp
-				});
-				if (!res.ok) throw new Error('WHIP HTTP 错误: ' + res.status);
-
-				const answerSdp = await res.text();
-				await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
-				console.log("✅ WHIP 音频推流成功");
-				
-				// 在页面上显示成功信息
-				const chatSection = document.getElementById('chatSection');
-				if (chatSection) {
-					const successMsg = document.createElement('div');
-					successMsg.className = 'message';
-					successMsg.innerHTML = '<div class="message-content"><div class="message-bubble" style="background: #4CAF50; color: white;">✅ 音频推流成功！Stream: ' + STREAM + '</div></div>';
-					chatSection.appendChild(successMsg);
-					chatSection.scrollTop = chatSection.scrollHeight;
+			// 停止媒体流
+			if (subscribeStream) {
+				subscribeStream.getTracks().forEach(track => track.stop());
+				subscribeStream = null;
+			}
+			
+			// 关闭 PeerConnection
+			subscribePc.close();
+			subscribePc = null;
+			
+			// 移除音频元素
+			const audioElements = document.querySelectorAll('audio[srcObject]');
+			audioElements.forEach(audio => {
+				if (audio.srcObject === subscribeStream) {
+					audio.pause();
+					audio.srcObject = null;
+					audio.remove();
 				}
-			} catch (e) {
-				console.error('❌ WHIP 音频推流失败', e);
+			});
+			
+			console.log('✅ [拉流] 拉流已停止');
+			appendStatusMessage('✅ 拉流已停止', 'info');
+		}
+		
+		// 预先获取麦克风权限（在页面加载时调用，避免按住按钮时弹出权限对话框）
+		async function requestMicrophonePermission() {
+			console.log('========== 开始获取麦克风权限 ==========');
+			try {
+				// 如果已有媒体流且流仍然活跃，不需要重新获取
+				if (publishStream && publishStream.getTracks().length > 0 && 
+				    publishStream.getTracks().some(track => track.readyState === 'live')) {
+					console.log('✅ [麦克风权限] 已有活跃的麦克风音频流，无需重新获取');
+					console.log('   - 媒体流ID:', publishStream.id);
+					console.log('   - 音轨数量:', publishStream.getTracks().length);
+					console.log('   - 音轨状态:', publishStream.getTracks().map(t => t.readyState));
+					return;
+				}
+				
+				console.log('🎤 [麦克风权限] 正在请求麦克风权限...');
+				// 获取本地媒体流（但不立即使用，只是获取权限）
+				publishStream = await navigator.mediaDevices.getUserMedia({
+					audio: true,
+					video: false
+				});
+				console.log("✅ [麦克风权限] 获取成功！");
+				console.log('   - 媒体流ID:', publishStream.id);
+				console.log('   - 音轨数量:', publishStream.getTracks().length);
+				console.log('   - 音轨信息:', publishStream.getTracks().map(t => ({
+					id: t.id,
+					kind: t.kind,
+					enabled: t.enabled,
+					readyState: t.readyState,
+					label: t.label
+				})));
+				appendStatusMessage('✅ 麦克风权限已获取，可以开始对讲', 'success');
+				console.log('========== 麦克风权限获取完成 ==========');
+			} catch (error) {
+				console.error('❌ [麦克风权限] 获取失败！');
+				console.error('   - 错误类型:', error.name);
+				console.error('   - 错误消息:', error.message);
+				console.error('   - 完整错误:', error);
+				appendStatusMessage(`⚠️ 获取麦克风权限失败: ${error.message}，请在按住按钮时允许使用麦克风`, 'warn');
+				console.log('========== 麦克风权限获取失败 ==========');
+				// 不阻止后续操作，用户可以在按住按钮时再次授权
+			}
+		}
+		
+		// 开始推流（通过服务器转发到 SRS，传统 API 方式）
+		async function startPublishing() {
+			console.log('========== 开始推流流程 ==========');
+			console.log('📤 [推流] 开始推流（传统 API 方式）...');
+			console.log('   - 当前推流状态:', isPublishing);
+			console.log('   - 房间信息:', roomInfo);
+			console.log('   - WebSocket状态:', ws ? ws.readyState : 'null');
+			
+			if (!roomInfo || !roomInfo.room_id) {
+				console.error('❌ [推流失败] 房间信息为空');
+				console.error('   - roomInfo:', roomInfo);
+				console.error('   - roomId:', roomId);
+				appendStatusMessage('❌ 无法推送音频：房间信息为空，请等待房间创建。', 'error');
+				// 恢复按钮状态
+				if (isPublishing) {
+					const voiceBtn = document.querySelector('.voice-btn');
+					if (voiceBtn) {
+						voiceBtn.classList.remove('active');
+					}
+					isPublishing = false;
+				}
+				console.log('========== 推流失败：房间信息为空 ==========');
+				return;
+			}
+
+			if (!ws || ws.readyState !== WebSocket.OPEN) {
+				console.error('❌ [推流失败] WebSocket未连接');
+				console.error('   - ws对象:', ws);
+				console.error('   - WebSocket状态:', ws ? ws.readyState : 'null');
+				console.error('   - OPEN状态值:', WebSocket.OPEN);
+				appendStatusMessage('❌ 无法推送音频：WebSocket未连接，请稍候。', 'error');
+				// 恢复按钮状态
+				if (isPublishing) {
+					const voiceBtn = document.querySelector('.voice-btn');
+					if (voiceBtn) {
+						voiceBtn.classList.remove('active');
+					}
+					isPublishing = false;
+				}
+				console.log('========== 推流失败：WebSocket未连接 ==========');
+				return;
+			}
+
+			try {
+				console.log('📤 [推流] 开始创建 RTCPeerConnection...');
+
+				// 如果已有 RTCPeerConnection，先关闭
+				if (publishPc) {
+					console.log('⚠️ [推流] 检测到旧的 RTCPeerConnection，正在关闭...');
+					publishPc.close();
+					publishPc = null;
+				}
+
+				// 创建 RTCPeerConnection
+				publishPc = new RTCPeerConnection({
+					iceServers: iceServers
+				});
+				console.log('✅ [推流] RTCPeerConnection 创建成功');
+				console.log('   - ConnectionState:', publishPc.connectionState);
+				console.log('   - IceConnectionState:', publishPc.iceConnectionState);
+
+				// 设置 ICE candidate 处理
+				setupIceCandidate(publishPc);
+				console.log('✅ [推流] ICE candidate 处理已设置');
+
+				// 如果已有媒体流且流仍然活跃，复用；否则重新获取
+				if (!publishStream || publishStream.getTracks().length === 0 || 
+				    publishStream.getTracks().every(track => track.readyState === 'ended')) {
+					console.log('🎤 [推流] 需要获取新的麦克风音频流...');
+					// 如果旧的流存在但已结束，先停止
+					if (publishStream) {
+						console.log('   - 停止旧的媒体流');
+						publishStream.getTracks().forEach(t => t.stop());
+						publishStream = null;
+					}
+					
+					// 获取本地媒体流
+					console.log('   - 正在请求 getUserMedia...');
+					publishStream = await navigator.mediaDevices.getUserMedia({
+						audio: true,
+						video: false
+					});
+					console.log("✅ [推流] 已获取新的麦克风音频流");
+					console.log('   - 媒体流ID:', publishStream.id);
+					console.log('   - 音轨数量:', publishStream.getTracks().length);
+				} else {
+					console.log("✅ [推流] 复用已有的麦克风音频流");
+					console.log('   - 媒体流ID:', publishStream.id);
+					console.log('   - 音轨数量:', publishStream.getTracks().length);
+					console.log('   - 音轨状态:', publishStream.getTracks().map(t => t.readyState));
+				}
+
+				// 添加媒体流到 PeerConnection
+				let tracksAdded = 0;
+				publishStream.getTracks().forEach(track => {
+					if (track.readyState === 'live') {
+						publishPc.addTrack(track, publishStream);
+						tracksAdded++;
+						console.log(`✅ [推流] 已添加音轨到 PeerConnection: ${track.id} (${track.kind})`);
+					} else {
+						console.warn(`⚠️ [推流] 跳过非活跃音轨: ${track.id} (状态: ${track.readyState})`);
+					}
+				});
+				console.log(`✅ [推流] 共添加 ${tracksAdded} 个音轨到 PeerConnection`);
+
+				// 创建 offer
+				console.log('📤 [推流] 正在创建 SDP offer...');
+				const offer = await publishPc.createOffer();
+				console.log('✅ [推流] SDP offer 创建成功');
+				console.log('   - Offer类型:', offer.type);
+				console.log('   - SDP长度:', offer.sdp ? offer.sdp.length : 0);
+				
+				await publishPc.setLocalDescription(offer);
+				console.log('✅ [推流] 本地描述已设置');
+				console.log('   - LocalDescription类型:', publishPc.localDescription.type);
+				console.log('   - ConnectionState:', publishPc.connectionState);
+
+				// 构建流名称（优先使用 stream_name，否则使用 room_id）
+				const streamName = roomInfo.stream_name || roomInfo.room_id;
+				console.log('📤 [推流] 准备发送推流请求到服务器...');
+				console.log('   - 流名称:', streamName);
+				console.log('   - 房间ID:', roomInfo.room_id);
+				console.log('   - 群组ID:', roomInfo.group_id);
+
+				// 通过 WebSocket 发送 offer 到服务器，服务器转发给 SRS
+				const message = {
+					type: "srs_publish_offer",
+					sdp: publishPc.localDescription.sdp,
+					stream_name: streamName,
+					room_id: roomInfo.room_id,
+					group_id: roomInfo.group_id
+				};
+
+				ws.send(JSON.stringify(message));
+				console.log('✅ [推流] 推流 offer 已发送到服务器');
+				console.log('   - 消息类型:', message.type);
+				console.log('   - 流名称:', message.stream_name);
+				console.log('   - 房间ID:', message.room_id);
+				console.log('   - 群组ID:', message.group_id);
+				console.log('   - SDP长度:', message.sdp ? message.sdp.length : 0);
+				
+				// 在页面上显示发送信息
+				appendStatusMessage(`📤 正在发送推流请求... Stream: ${streamName}`, 'info');
+				console.log('========== 推流请求已发送，等待服务器响应 ==========');
+
+			} catch (error) {
+				console.error('========== 推流失败 ==========');
+				console.error('❌ [推流失败] 错误详情:');
+				console.error('   - 错误类型:', error.name);
+				console.error('   - 错误消息:', error.message);
+				console.error('   - 错误堆栈:', error.stack);
+				console.error('   - 完整错误对象:', error);
+				
+				// 清理资源
+				if (publishPc) {
+					console.log('   - 正在清理 RTCPeerConnection...');
+					publishPc.close();
+					publishPc = null;
+				}
 				
 				// 在页面上显示错误信息
-				const chatSection = document.getElementById('chatSection');
-				if (chatSection) {
-					const errorMsg = document.createElement('div');
-					errorMsg.className = 'message';
-					errorMsg.innerHTML = '<div class="message-content"><div class="message-bubble" style="background: #f44336; color: white;">❌ 音频推流失败: ' + e.message + '</div></div>';
-					chatSection.appendChild(errorMsg);
-					chatSection.scrollTop = chatSection.scrollHeight;
+				appendStatusMessage(`❌ 推流失败: ${error.message}`, 'error');
+				
+				// 恢复按钮状态
+				if (isPublishing) {
+					const voiceBtn = document.querySelector('.voice-btn');
+					if (voiceBtn) {
+						voiceBtn.classList.remove('active');
+					}
+					isPublishing = false;
 				}
+				console.log('========== 推流失败处理完成 ==========');
+			}
+		}
+		
+		// 停止推流
+		function stopPublishing() {
+			console.log('========== 开始停止推流 ==========');
+			console.log('🛑 [停止推流] 开始停止推流...');
+			console.log('   - 当前推流状态:', isPublishing);
+			console.log('   - RTCPeerConnection状态:', publishPc ? publishPc.connectionState : 'null');
+			console.log('   - 媒体流状态:', publishStream ? '存在' : 'null');
+			
+			try {
+				// 只关闭 RTCPeerConnection，保留媒体流以便下次复用（避免重复请求权限）
+				if (publishPc) {
+					console.log('🛑 [停止推流] 正在关闭 RTCPeerConnection...');
+					console.log('   - 关闭前状态:', publishPc.connectionState);
+					console.log('   - 关闭前ICE状态:', publishPc.iceConnectionState);
+					
+					publishPc.close();
+					publishPc = null;
+					console.log('✅ [停止推流] RTCPeerConnection 已关闭');
+				} else {
+					console.log('⚠️ [停止推流] RTCPeerConnection 不存在，无需关闭');
+				}
+				
+				// 注意：不停止 publishStream，以便下次复用，避免重复请求权限
+				// 只有在页面关闭时才停止媒体流
+				if (publishStream) {
+					console.log('✅ [停止推流] 媒体流已保留以便下次复用');
+					console.log('   - 媒体流ID:', publishStream.id);
+					console.log('   - 音轨数量:', publishStream.getTracks().length);
+					console.log('   - 音轨状态:', publishStream.getTracks().map(t => t.readyState));
+				} else {
+					console.log('⚠️ [停止推流] 媒体流不存在');
+				}
+				
+				console.log('✅ [停止推流] 停止推流成功');
+				console.log('========== 停止推流完成 ==========');
+			} catch (error) {
+				console.error('❌ [停止推流失败] 错误详情:');
+				console.error('   - 错误类型:', error.name);
+				console.error('   - 错误消息:', error.message);
+				console.error('   - 完整错误:', error);
+				console.log('========== 停止推流失败 ==========');
 			}
 		}
 		
@@ -667,9 +1004,6 @@
 			console.log('消息类型:', message.type);
 			console.log('消息完整内容:', JSON.stringify(message, null, 2));
 			
-			// 获取聊天区域元素（在函数开始处声明一次）
-			const chatSection = document.getElementById('chatSection');
-			
 			// 根据消息类型进行处理
 			if (message.type !== undefined) {
 				console.log('消息有type字段，值为:', message.type);
@@ -680,21 +1014,111 @@
 						console.log('房间ID:', message.room_id);
 						if (message.room_id) {
 							roomId = message.room_id;
-							console.log('已更新roomId变量为:', roomId);
+							// 更新房间信息
+							roomInfo = {
+								room_id: message.room_id,
+								whip_url: message.whip_url,
+								whep_url: message.whep_url,
+								stream_name: message.stream_name || message.room_id,
+								group_id: message.group_id || groupId
+							};
+							console.log('已更新房间信息:', roomInfo);
 							
 							// 在页面上显示成功信息
-							if (chatSection) {
-								const successMsg = document.createElement('div');
-								successMsg.className = 'message';
-								successMsg.innerHTML = '<div class="message-content"><div class="message-bubble" style="background: #4CAF50; color: white;">✅ 房间创建成功！房间ID: ' + message.room_id + '</div></div>';
-								chatSection.appendChild(successMsg);
-								chatSection.scrollTop = chatSection.scrollHeight;
+							appendStatusMessage(`✅ 房间创建成功，ID: ${message.room_id}`, 'success');
+							
+							// 房间创建成功后，开始拉流
+							if (message.whep_url) {
+								console.log('🎧 [拉流] 房间创建成功，开始拉流...');
+								startPullStream(message.whep_url);
 							}
 							
-							// 房间创建成功后，开始推送音频数据到SRS服务器
-							console.log('🎤 房间创建成功，开始推送音频...');
-							whipPublishAudio();
+							// 房间创建成功后，不再自动开始推流，等待用户按下按钮
+							console.log('🎤 房间创建成功，等待用户按下"按住开始对讲"按钮...');
 						}
+						break;
+					case "srs_answer":
+						// 收到服务器转发的 SRS answer（可能是推流或拉流）
+						console.log('========== 收到 SRS Answer ==========');
+						console.log('📥 [SRS Answer] 收到服务器返回的 SRS answer');
+						console.log('   - action:', message.action);
+						console.log('   - 是否有SDP:', !!message.sdp);
+						console.log('   - publishPc状态:', publishPc ? publishPc.connectionState : 'null');
+						console.log('   - subscribePc状态:', subscribePc ? subscribePc.connectionState : 'null');
+						
+						// 处理推流 answer
+						if (message.action === 'publish' && message.sdp && publishPc) {
+							console.log('📥 [推流Answer] 正在设置远程描述...');
+							publishPc.setRemoteDescription({
+								type: 'answer',
+								sdp: message.sdp
+							}).then(() => {
+								console.log('========== 推流成功 ==========');
+								console.log('✅ [推流成功] 推流连接建立成功！');
+								console.log('   - ConnectionState:', publishPc.connectionState);
+								console.log('   - IceConnectionState:', publishPc.iceConnectionState);
+								console.log('   - 远程描述类型:', publishPc.remoteDescription ? publishPc.remoteDescription.type : 'null');
+								console.log('   - 本地描述类型:', publishPc.localDescription ? publishPc.localDescription.type : 'null');
+								
+								// 在页面上显示成功信息
+								appendStatusMessage('✅ 推流连接建立成功！', 'success');
+								console.log('========== 推流成功处理完成 ==========');
+							}).catch(error => {
+								console.error('========== 推流失败：设置Answer失败 ==========');
+								console.error('❌ [推流失败] 设置 answer 失败:');
+								console.error('   - 错误类型:', error.name);
+								console.error('   - 错误消息:', error.message);
+								console.error('   - 错误堆栈:', error.stack);
+								console.error('   - 完整错误:', error);
+								
+								// 在页面上显示错误信息
+								appendStatusMessage(`❌ 设置 answer 失败: ${error.message}`, 'error');
+								console.log('========== 推流失败处理完成 ==========');
+							});
+						}
+						// 处理拉流 answer
+						else if (message.action === 'play' && message.sdp && subscribePc) {
+							console.log('📥 [拉流Answer] 正在设置远程描述...');
+							subscribePc.setRemoteDescription({
+								type: 'answer',
+								sdp: message.sdp
+							}).then(() => {
+								console.log('========== 拉流成功 ==========');
+								console.log('✅ [拉流成功] 拉流连接建立成功！');
+								console.log('   - ConnectionState:', subscribePc.connectionState);
+								console.log('   - IceConnectionState:', subscribePc.iceConnectionState);
+								console.log('   - 远程描述类型:', subscribePc.remoteDescription ? subscribePc.remoteDescription.type : 'null');
+								console.log('   - 本地描述类型:', subscribePc.localDescription ? subscribePc.localDescription.type : 'null');
+								
+								// 在页面上显示成功信息
+								appendStatusMessage('✅ 拉流连接建立成功！', 'success');
+								console.log('========== 拉流成功处理完成 ==========');
+							}).catch(error => {
+								console.error('========== 拉流失败：设置Answer失败 ==========');
+								console.error('❌ [拉流失败] 设置 answer 失败:');
+								console.error('   - 错误类型:', error.name);
+								console.error('   - 错误消息:', error.message);
+								console.error('   - 错误堆栈:', error.stack);
+								console.error('   - 完整错误:', error);
+								
+								// 在页面上显示错误信息
+								appendStatusMessage(`❌ 设置拉流 answer 失败: ${error.message}`, 'error');
+								console.log('========== 拉流失败处理完成 ==========');
+							});
+						} else {
+							console.warn('⚠️ [SRS Answer] 消息格式不正确或对应的 PeerConnection 不存在');
+							console.warn('   - action:', message.action);
+							console.warn('   - 是否有SDP:', !!message.sdp);
+							console.warn('   - publishPc:', publishPc);
+							console.warn('   - subscribePc:', subscribePc);
+						}
+						break;
+					case "srs_error":
+						// 收到服务器返回的 SRS 错误
+						console.error('❌ SRS 错误:', message.message);
+						
+						// 在页面上显示错误信息
+						appendStatusMessage(`❌ SRS 错误: ${message.message || '未知错误'}`, 'error');
 						break;
 					case "room_error":
 					case "error":
@@ -702,43 +1126,215 @@
 						console.error('错误信息:', message.error || message.message);
 						
 						// 在页面上显示错误信息
-						if (chatSection) {
-							const errorMsg = document.createElement('div');
-							errorMsg.className = 'message';
-							errorMsg.innerHTML = '<div class="message-content"><div class="message-bubble" style="background: #f44336; color: white;">❌ 房间创建失败: ' + (message.error || message.message || '未知错误') + '</div></div>';
-							chatSection.appendChild(errorMsg);
-							chatSection.scrollTop = chatSection.scrollHeight;
-						}
+						appendStatusMessage(`❌ 房间创建失败: ${message.error || message.message || '未知错误'}`, 'error');
+						break;
+					case "temp_room_closed":
+						// 收到房间解散通知
+						console.log('⚠️ 房间已解散:', message.message);
+						
+						// 停止推流
+						stopPublishing();
+						
+						// 清理房间信息
+						roomInfo = null;
+						
+						// 在页面上显示通知
+						appendStatusMessage(`⚠️ ${message.message || '房间已解散'}`, 'warn');
 						break;
 					default:
 						console.log('📨 收到其他类型消息:');
 						console.log('类型值:', message.type);
 						console.log('完整消息:', message);
 						
-						// 显示所有收到的消息
-						if (chatSection) {
-							const infoMsg = document.createElement('div');
-							infoMsg.className = 'message';
-							infoMsg.innerHTML = '<div class="message-content"><div class="message-bubble" style="background: #2196F3; color: white;">📨 收到消息: ' + JSON.stringify(message) + '</div></div>';
-							chatSection.appendChild(infoMsg);
-							chatSection.scrollTop = chatSection.scrollHeight;
+						// 过滤掉不需要显示的消息类型
+						const ignoredMessageTypes = [
+							'unread_notifications',  // 未读通知
+							'prepare_class_history', // 课前准备历史
+							// 可以在这里添加其他不需要显示的消息类型
+						];
+						
+						if (!ignoredMessageTypes.includes(message.type)) {
+							// 只显示不在过滤列表中的消息
+							appendStatusMessage(`📨 收到消息: ${JSON.stringify(message)}`, 'info');
+						} else {
+							console.log(`🔇 [消息过滤] 已过滤消息类型: ${message.type}`);
 						}
 				}
 			} else {
 				console.log('⚠️ 消息没有type字段:');
 				console.log('完整消息:', message);
 				
-				// 显示没有type的消息
-				if (chatSection) {
-					const infoMsg = document.createElement('div');
-					infoMsg.className = 'message';
-					infoMsg.innerHTML = '<div class="message-content"><div class="message-bubble" style="background: #FF9800; color: white;">⚠️ 收到无类型消息: ' + JSON.stringify(message) + '</div></div>';
-					chatSection.appendChild(infoMsg);
-					chatSection.scrollTop = chatSection.scrollHeight;
-				}
+				// 不显示没有type的消息（通常这些消息也不重要）
+				// appendStatusMessage(`⚠️ 收到无类型消息: ${JSON.stringify(message)}`, 'warn');
 			}
 			
 			console.log('========================================');
+		}
+		
+		// 推流状态
+		let isPublishing = false;
+		
+		// 绑定"按住开始对讲"按钮事件
+		function setupVoiceButton() {
+			const voiceBtn = document.querySelector('.voice-btn');
+			if (!voiceBtn) return;
+			
+			// 鼠标按下事件
+			voiceBtn.addEventListener('mousedown', (e) => {
+				console.log('🖱️ [鼠标事件] mousedown - 鼠标按下');
+				e.preventDefault();
+				if (!isPublishing) {
+					startPublishingWithButton();
+				} else {
+					console.log('⚠️ [鼠标事件] 已在推流中，忽略重复按下');
+				}
+			});
+			
+			// 鼠标松开事件
+			voiceBtn.addEventListener('mouseup', (e) => {
+				console.log('🖱️ [鼠标事件] mouseup - 鼠标松开');
+				e.preventDefault();
+				if (isPublishing) {
+					stopPublishingWithButton();
+				} else {
+					console.log('⚠️ [鼠标事件] 未在推流中，忽略松开事件');
+				}
+			});
+			
+			// 鼠标离开按钮区域时也停止
+			voiceBtn.addEventListener('mouseleave', (e) => {
+				console.log('🖱️ [鼠标事件] mouseleave - 鼠标离开按钮区域');
+				if (isPublishing) {
+					console.log('   - 正在推流，自动停止');
+					stopPublishingWithButton();
+				} else {
+					console.log('   - 未在推流，无需处理');
+				}
+			});
+			
+			// 触摸事件（移动端支持）
+			voiceBtn.addEventListener('touchstart', (e) => {
+				console.log('👆 [触摸事件] touchstart - 触摸开始');
+				e.preventDefault();
+				if (!isPublishing) {
+					startPublishingWithButton();
+				} else {
+					console.log('⚠️ [触摸事件] 已在推流中，忽略重复触摸');
+				}
+			});
+			
+			voiceBtn.addEventListener('touchend', (e) => {
+				console.log('👆 [触摸事件] touchend - 触摸结束');
+				e.preventDefault();
+				if (isPublishing) {
+					stopPublishingWithButton();
+				} else {
+					console.log('⚠️ [触摸事件] 未在推流中，忽略触摸结束');
+				}
+			});
+		}
+		
+		// 通过按钮开始推流
+		async function startPublishingWithButton() {
+			console.log('========== 按钮按下：开始推流 ==========');
+			console.log('🔘 [按钮事件] 用户按下"按住开始对讲"按钮');
+			console.log('   - 当前推流状态:', isPublishing);
+			
+			if (isPublishing) {
+				console.log('⚠️ [按钮事件] 已经在推流中，跳过重复调用');
+				return;
+			}
+			
+			// 如果房间信息不存在，尝试从C++传入的数据中获取
+			if (!roomInfo && roomId) {
+				console.log('📋 [按钮事件] 从C++传入的数据中获取房间信息...');
+				roomInfo = {
+					room_id: roomId,
+					whip_url: whipUrl,
+					whep_url: whepUrl,
+					stream_name: streamName,
+					group_id: groupId
+				};
+				console.log('   - 房间信息已更新:', roomInfo);
+			}
+			
+			// 如果WebSocket未连接，先连接
+			if (!ws || ws.readyState !== WebSocket.OPEN) {
+				console.log('🔌 [按钮事件] WebSocket未连接，正在连接...');
+				connectWebSocket();
+				// 等待WebSocket连接成功
+				await new Promise((resolve, reject) => {
+					let attempts = 0;
+					const maxAttempts = 50; // 最多等待5秒
+					const checkConnection = () => {
+						attempts++;
+						if (ws && ws.readyState === WebSocket.OPEN) {
+							console.log(`✅ [按钮事件] WebSocket连接成功（等待了 ${attempts * 100}ms）`);
+							resolve();
+						} else if (attempts >= maxAttempts) {
+							reject(new Error('WebSocket连接超时'));
+						} else {
+							setTimeout(checkConnection, 100);
+						}
+					};
+					checkConnection();
+				}).catch(error => {
+					console.error('========== 按钮事件：WebSocket连接失败 ==========');
+					console.error('❌ [按钮事件] WebSocket连接失败:');
+					console.error('   - 错误类型:', error.name);
+					console.error('   - 错误消息:', error.message);
+					appendStatusMessage('❌ WebSocket连接失败，请稍后重试。', 'error');
+					// 恢复按钮状态
+					const voiceBtn = document.querySelector('.voice-btn');
+					if (voiceBtn) {
+						voiceBtn.classList.remove('active');
+					}
+					isPublishing = false;
+					console.log('========== 按钮事件处理完成 ==========');
+					return;
+				});
+			} else {
+				console.log('✅ [按钮事件] WebSocket已连接，状态:', ws.readyState);
+			}
+			
+			// 更新按钮状态
+			const voiceBtn = document.querySelector('.voice-btn');
+			if (voiceBtn) {
+				voiceBtn.classList.add('active');
+				console.log('✅ [按钮事件] 按钮状态已更新为 active');
+			}
+			
+			isPublishing = true;
+			console.log('✅ [按钮事件] 推流状态已设置为 true');
+			await startPublishing();
+		}
+		
+		// 通过按钮停止推流
+		function stopPublishingWithButton() {
+			console.log('========== 按钮松开：停止推流 ==========');
+			console.log('🔘 [按钮事件] 用户松开"按住开始对讲"按钮');
+			console.log('   - 当前推流状态:', isPublishing);
+			
+			if (!isPublishing) {
+				console.log('⚠️ [按钮事件] 当前未在推流，无需停止');
+				return;
+			}
+			
+			// 更新按钮状态
+			const voiceBtn = document.querySelector('.voice-btn');
+			if (voiceBtn) {
+				voiceBtn.classList.remove('active');
+				console.log('✅ [按钮事件] 按钮状态已更新为 inactive');
+			}
+			
+			isPublishing = false;
+			console.log('✅ [按钮事件] 推流状态已设置为 false');
+			
+			stopPublishing();
+			
+			// 在页面上显示停止信息
+			appendStatusMessage('🛑 已停止推流。', 'info');
+			console.log('========== 按钮事件处理完成 ==========');
 		}
 		
 		// 页面加载完成后初始化
@@ -746,10 +1342,19 @@
 			console.log('应用数据:', appData);
 			console.log('当前用户:', currentUser);
 			
+			// 检查是否有房间信息，如果有则尝试开始拉流（延迟执行，确保WebSocket连接后再拉流）
+			if (appData.temp_room && appData.temp_room.whep_url) {
+				console.log('🔍 [页面加载] 检测到拉流地址，将在WebSocket连接后开始拉流');
+				console.log('   - 拉流地址:', appData.temp_room.whep_url);
+			}
+			
 			// 渲染参与者列表
 			renderParticipants();
 			
-			// 连接WebSocket
+			// 绑定"按住开始对讲"按钮事件
+			setupVoiceButton();
+			
+			// 连接WebSocket（但不自动开始推流，等待用户按下按钮）
 			connectWebSocket();
 		});
 		
@@ -757,14 +1362,18 @@
 		window.addEventListener('beforeunload', () => {
 			// 停止音频推流
 			if (publishPc) {
-				publishPc.getSenders().forEach(sender => {
-					if (sender.track) {
-						sender.track.stop();
-					}
-				});
 				publishPc.close();
 				publishPc = null;
 			}
+			
+			// 停止媒体流（页面关闭时才停止）
+			if (publishStream) {
+				publishStream.getTracks().forEach(t => t.stop());
+				publishStream = null;
+			}
+			
+			// 停止拉流
+			stopPullStream();
 			
 			// 关闭WebSocket连接
 			if (ws) {

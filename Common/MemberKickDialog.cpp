@@ -6,6 +6,11 @@
 #include <QDebug>
 #include <QScrollArea>
 #include <QWidget>
+#include <QPointer>
+#include <QMetaObject>
+
+#include "ImSDK/includes/TIMCloud.h"
+#include "ImSDK/includes/TIMCloudDef.h"
 
 MemberKickDialog::MemberKickDialog(QWidget* parent)
     : QDialog(parent)
@@ -57,12 +62,17 @@ MemberKickDialog::MemberKickDialog(QWidget* parent)
 MemberKickDialog::~MemberKickDialog()
 {}
 
+void MemberKickDialog::setUseTencentSDK(bool useTencentSDK)
+{
+    m_useTencentSDK = useTencentSDK;
+}
+
 void MemberKickDialog::InitData(const QVector<GroupMemberInfo>& memberList)
 {
     clearLayout(m_membersLayout);
     
     UserInfo userInfo = CommonInfo::GetData();
-    QString currentUserId = userInfo.teacher_unique_id;
+    QString currentUserId = userInfo.classId;
     
     // 遍历成员列表，排除群主（角色为"群主"的成员）
     for (const auto& member : memberList)
@@ -154,6 +164,95 @@ void MemberKickDialog::onOkClicked()
         return;
     }
     
+    // 普通群：踢人走腾讯 SDK；班级群：沿用原有服务器接口
+    if (m_useTencentSDK) {
+        QJsonObject payload;
+        payload[QString::fromUtf8(kTIMGroupDeleteMemberParamGroupId)] = m_groupId;
+
+        QJsonArray idArray;
+        for (const auto& id : selectedMemberIds) {
+            idArray.append(id);
+        }
+        payload[QString::fromUtf8(kTIMGroupDeleteMemberParamIdentifierArray)] = idArray;
+        payload[QString::fromUtf8(kTIMGroupDeleteMemberParamUserData)] = QStringLiteral("ta_kick");
+
+        const QByteArray jsonData = QJsonDocument(payload).toJson(QJsonDocument::Compact);
+
+        struct KickCbData {
+            QPointer<MemberKickDialog> dlg;
+            QString groupId;
+        };
+        KickCbData* cbData = new KickCbData;
+        cbData->dlg = this;
+        cbData->groupId = m_groupId;
+
+        int callRet = TIMGroupDeleteMember(jsonData.constData(),
+            [](int32_t code, const char* desc, const char* json_params, const void* user_data) {
+                KickCbData* d = (KickCbData*)user_data;
+                if (!d) return;
+                if (!d->dlg) { delete d; return; }
+
+                const QPointer<MemberKickDialog> dlg = d->dlg;
+                const QString groupId = d->groupId;
+                const QString errDesc = QString::fromUtf8(desc ? desc : "");
+                const QByteArray payload = QByteArray(json_params ? json_params : "");
+
+                if (dlg) {
+                    QMetaObject::invokeMethod(dlg, [dlg, groupId, code, errDesc, payload]() {
+                        if (!dlg) return;
+                        if (code != 0) {
+                            QMessageBox::warning(dlg, QString::fromUtf8(u8"踢出失败"),
+                                QString("腾讯SDK踢出失败\n错误码: %1\n错误描述: %2").arg(code).arg(errDesc));
+                            return;
+                        }
+
+                        int suc = 0, included = 0, invited = 0, failed = 0;
+                        QStringList failedIds;
+
+                        QJsonParseError pe;
+                        QJsonDocument doc = QJsonDocument::fromJson(payload, &pe);
+                        if (pe.error == QJsonParseError::NoError && doc.isArray()) {
+                            const QJsonArray arr = doc.array();
+                            for (const auto& v : arr) {
+                                if (!v.isObject()) continue;
+                                const QJsonObject o = v.toObject();
+                                const QString id = o.value(QString::fromUtf8(kTIMGroupDeleteMemberResultIdentifier)).toString();
+                                const int r = o.value(QString::fromUtf8(kTIMGroupDeleteMemberResultResult)).toInt(0);
+                                if (r == (int)kTIMGroupMember_HandledSuc) suc++;
+                                else if (r == (int)kTIMGroupMember_Included) included++; // 对 delete 来说通常不会出现
+                                else if (r == (int)kTIMGroupMember_Invited) invited++;   // 对 delete 来说通常不会出现
+                                else { failed++; if (!id.isEmpty()) failedIds << id; }
+                            }
+                        }
+
+                        QString msg = QString::fromUtf8(u8"踢出已提交。\n");
+                        msg += QString("成功: %1，失败: %2").arg(suc).arg(failed);
+                        if (!failedIds.isEmpty()) {
+                            msg += QString::fromUtf8(u8"\n失败成员: ") + failedIds.mid(0, 8).join(", ");
+                            if (failedIds.size() > 8) msg += "...";
+                        }
+
+                        QMessageBox::information(dlg, QString::fromUtf8(u8"踢出结果"), msg);
+
+                        if (suc > 0) {
+                            emit dlg->membersKickedSuccess(groupId);
+                            dlg->accept();
+                        }
+                    }, Qt::QueuedConnection);
+                }
+
+                delete d;
+            },
+            cbData);
+
+        if (callRet != TIM_SUCC) {
+            delete cbData;
+            QMessageBox::warning(this, QString::fromUtf8(u8"踢出失败"),
+                QString("TIMGroupDeleteMember 调用失败，错误码: %1").arg(callRet));
+        }
+        return;
+    }
+
     if (!m_httpHandler) {
         QMessageBox::critical(this, "错误", "HTTP处理器未初始化！");
         return;

@@ -424,7 +424,7 @@ private:
             createGroupMsg["headImage_path"] = "/images/group.png";
             createGroupMsg["group_type"] = 0; // 0=公开群（Public），支持设置管理员
             createGroupMsg["nickname"] = grade + class_taught + "的班级群";
-            createGroupMsg["owner_id"] = userinfo.teacher_unique_id;
+            createGroupMsg["owner_id"] = userinfo.classId;
             createGroupMsg["owner_name"] = userinfo.strName;
 
             // 成员数组

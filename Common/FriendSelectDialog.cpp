@@ -6,6 +6,13 @@
 #include <QDebug>
 #include <QScrollArea>
 #include <QWidget>
+#include <QPointer>
+#include <QMetaObject>
+
+#include "ImSDK/includes/TIMCloud.h"
+#include "ImSDK/includes/TIMCloudDef.h"
+#include "TIMRestAPI.h"
+#include "GenerateTestUserSig.h"
 
 FriendSelectDialog::FriendSelectDialog(QWidget* parent)
     : QDialog(parent)
@@ -61,6 +68,11 @@ FriendSelectDialog::FriendSelectDialog(QWidget* parent)
 
 FriendSelectDialog::~FriendSelectDialog()
 {}
+
+void FriendSelectDialog::setUseTencentSDK(bool useTencentSDK)
+{
+    m_useTencentSDK = useTencentSDK;
+}
 
 void FriendSelectDialog::InitData()
 {
@@ -229,6 +241,137 @@ void FriendSelectDialog::onOkClicked()
         return;
     }
     
+    // 普通群：邀请成员走腾讯 SDK；班级群：沿用原有服务器接口
+    if (m_useTencentSDK) {
+        QJsonObject payload;
+        payload[QString::fromUtf8(kTIMGroupInviteMemberParamGroupId)] = m_groupId;
+
+        QJsonArray idArray;
+        for (const auto& id : selectedTeacherIds) {
+            idArray.append(id);
+        }
+        payload[QString::fromUtf8(kTIMGroupInviteMemberParamIdentifierArray)] = idArray;
+        payload[QString::fromUtf8(kTIMGroupInviteMemberParamUserData)] = QStringLiteral("ta_invite");
+
+        const QByteArray jsonData = QJsonDocument(payload).toJson(QJsonDocument::Compact);
+
+        struct InviteCbData {
+            QPointer<FriendSelectDialog> dlg;
+            QString groupId;
+            QVector<QString> ids;
+            QVector<QString> names;
+        };
+        InviteCbData* cbData = new InviteCbData;
+        cbData->dlg = this;
+        cbData->groupId = m_groupId;
+        cbData->ids = selectedTeacherIds;
+        cbData->names = selectedNames;
+
+        int callRet = TIMGroupInviteMember(jsonData.constData(),
+            [](int32_t code, const char* desc, const char* json_params, const void* user_data) {
+                InviteCbData* d = (InviteCbData*)user_data;
+                if (!d) return;
+                if (!d->dlg) { delete d; return; }
+
+                const QPointer<FriendSelectDialog> dlg = d->dlg;
+                const QString groupId = d->groupId;
+                const QVector<QString> ids = d->ids;
+                const QVector<QString> names = d->names;
+                const QString errDesc = QString::fromUtf8(desc ? desc : "");
+                const QByteArray payload = QByteArray(json_params ? json_params : "");
+
+                if (dlg) {
+                    QMetaObject::invokeMethod(dlg, [dlg, groupId, ids, names, code, errDesc, payload]() {
+                        if (!dlg) return;
+                        if (code != 0) {
+                            QMessageBox::warning(dlg, QString::fromUtf8(u8"邀请失败"),
+                                QString("腾讯SDK邀请失败\n错误码: %1\n错误描述: %2").arg(code).arg(errDesc));
+                            return;
+                        }
+
+                        int suc = 0, included = 0, invited = 0, failed = 0;
+                        QStringList failedIds;
+                        QSet<QString> succeededOrIncluded;
+
+                        QJsonParseError pe;
+                        QJsonDocument doc = QJsonDocument::fromJson(payload, &pe);
+                        if (pe.error == QJsonParseError::NoError && doc.isArray()) {
+                            const QJsonArray arr = doc.array();
+                            for (const auto& v : arr) {
+                                if (!v.isObject()) continue;
+                                const QJsonObject o = v.toObject();
+                                const QString id = o.value(QString::fromUtf8(kTIMGroupInviteMemberResultIdentifier)).toString();
+                                const int r = o.value(QString::fromUtf8(kTIMGroupInviteMemberResultResult)).toInt(0);
+                                if (r == (int)kTIMGroupMember_HandledSuc) { suc++; if (!id.isEmpty()) succeededOrIncluded.insert(id); }
+                                else if (r == (int)kTIMGroupMember_Included) { included++; if (!id.isEmpty()) succeededOrIncluded.insert(id); }
+                                else if (r == (int)kTIMGroupMember_Invited) { invited++; }
+                                else { failed++; if (!id.isEmpty()) failedIds << id; }
+                            }
+                        }
+
+                        // 普通群：尽量把名字写入群名片（NameCard），避免成员列表只显示账号ID
+                        // 仅对已经“成功加入/已在群”的成员设置 NameCard；Invited(待同意)此时可能还不在群里
+                        if (!succeededOrIncluded.isEmpty()) {
+                            std::string adminUserId = GenerateTestUserSig::instance().getAdminUserId();
+                            if (!adminUserId.empty()) {
+                                const QString adminId = QString::fromStdString(adminUserId);
+                                const QString adminSig = QString::fromStdString(GenerateTestUserSig::instance().genTestUserSig(adminUserId));
+
+                                TIMRestAPI* rest = new TIMRestAPI(dlg);
+                                rest->setAdminInfo(adminId, adminSig);
+
+                                for (int i = 0; i < ids.size() && i < names.size(); ++i) {
+                                    const QString memberId = ids[i];
+                                    const QString memberName = names[i].trimmed();
+                                    if (!succeededOrIncluded.contains(memberId)) continue;
+                                    if (memberName.isEmpty()) continue;
+
+                                    // 只设置 nameCard，不改角色/禁言
+                                    rest->modifyGroupMemberInfo(groupId, memberId, QString(), -1, memberName,
+                                        [memberId, memberName](int ec, const QString& ed, const QJsonObject& /*res*/) {
+                                            if (ec != 0) {
+                                                qDebug() << "设置 NameCard 失败 member:" << memberId << "name:" << memberName
+                                                         << "error:" << ec << ed;
+                                            } else {
+                                                qDebug() << "设置 NameCard 成功 member:" << memberId << "name:" << memberName;
+                                            }
+                                        });
+                                }
+                            } else {
+                                qWarning() << "管理员账号未设置，跳过 NameCard 设置";
+                            }
+                        }
+
+                        QString msg = QString::fromUtf8(u8"邀请已提交。\n");
+                        msg += QString("成功: %1，已在群: %2，已发送邀请: %3，失败: %4")
+                                   .arg(suc).arg(included).arg(invited).arg(failed);
+                        if (!failedIds.isEmpty()) {
+                            msg += QString::fromUtf8(u8"\n失败成员: ") + failedIds.mid(0, 8).join(", ");
+                            if (failedIds.size() > 8) msg += "...";
+                        }
+
+                        QMessageBox::information(dlg, QString::fromUtf8(u8"邀请结果"), msg);
+
+                        // 有任何“非失败”都刷新成员列表（公共群可能是 invited，成员需要同意后才会真正进群）
+                        if (suc > 0 || included > 0 || invited > 0) {
+                            emit dlg->membersInvitedSuccess(groupId);
+                            dlg->accept();
+                        }
+                    }, Qt::QueuedConnection);
+                }
+
+                delete d;
+            },
+            cbData);
+
+        if (callRet != TIM_SUCC) {
+            delete cbData;
+            QMessageBox::warning(this, QString::fromUtf8(u8"邀请失败"),
+                QString("TIMGroupInviteMember 调用失败，错误码: %1").arg(callRet));
+        }
+        return;
+    }
+
     if (!m_httpHandler) {
         QMessageBox::critical(this, "错误", "HTTP处理器未初始化！");
         return;

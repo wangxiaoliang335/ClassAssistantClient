@@ -39,12 +39,12 @@
   </ImportGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="QtSettings">
     <QtInstall>D:\Qt\5.15.2\msvc2019_64</QtInstall>
-    <QtModules>core;gui;network;widgets;websockets;multimedia</QtModules>
+    <QtModules>core;gui;network;widgets;websockets;multimedia;printsupport</QtModules>
     <QtBuildConfig>debug</QtBuildConfig>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="QtSettings">
     <QtInstall>C:\Qt\5.15.2\msvc2019_64</QtInstall>
-    <QtModules>core;gui;widgets;websockets;network;multimedia</QtModules>
+    <QtModules>core;gui;widgets;websockets;network;multimedia;printsupport</QtModules>
     <QtBuildConfig>release</QtBuildConfig>
   </PropertyGroup>
   <Target Name="QtMsBuildNotFound" BeforeTargets="CustomBuild;ClCompile" Condition="!Exists('$(QtMsBuild)\qt.targets') or !Exists('$(QtMsBuild)\qt.props')">
@@ -112,6 +112,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <QtMoc Include="ClassInfoDialog.h" />
     <ClInclude Include="common\Base.h" />
     <ClInclude Include="common\crashdump.h" />
     <ClInclude Include="common\HttpClient.h" />
@@ -146,7 +147,6 @@
     <QtMoc Include="RegisterDialog.h" />
     <QtMoc Include="ResetPwdDialog.h" />
     <QtMoc Include="SchoolInfoDialog.h" />
-    <QtMoc Include="ClassInfoDialog.h" />
     <QtMoc Include="QSchoolInfoWidget.h" />
     <QtMoc Include="QClassMgr.h" />
     <QtMoc Include="MemberManagerWidget.h" />
@@ -161,16 +161,22 @@
     <QtMoc Include="FriendNotifyDialog.h" />
     <QtMoc Include="GroupNotifyDialog.h" />
     <QtMoc Include="CustomListDialog.h" />
+    <QtMoc Include="CellCommentWidget.h" />
+    <QtMoc Include="CommentInputDialog.h" />
     <QtMoc Include="MidtermGradeDialog.h" />
     <QtMoc Include="StudentPhysiqueDialog.h" />
+    <QtMoc Include="GroupScoreDialog.h" />
     <QtMoc Include="ArrangeSeatDialog.h" />
     <QtMoc Include="SeatingArrangementDialog.h" />
     <QtMoc Include="HeatmapSegmentDialog.h" />
     <QtMoc Include="HeatmapViewDialog.h" />
+    <QtMoc Include="qcustomplot.h" />
     <QtMoc Include="RandomCallDialog.h" />
+    <QtMoc Include="RandomCallMessageDialog.h" />
     <QtMoc Include="StudentAttributeDialog.h" />
     <QtMoc Include="HomeworkEditDialog.h" />
     <QtMoc Include="HomeworkViewDialog.h" />
+    <QtMoc Include="NotificationViewDialog.h" />
     <QtMoc Include="AvatarLabel.h" />
     <QtMoc Include="NameLabel.h" />
     <QtMoc Include="ChatDialog.h" />
@@ -192,6 +198,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="AudioReceiver.cpp" />
+    <ClCompile Include="ClassInfoDialog.cpp" />
     <ClCompile Include="WebRTCAudioSender.cpp" />
     <ClCompile Include="RtmpMediaStreamer.cpp" />
     <ClCompile Include="AvatarLabel.cpp" />
@@ -204,16 +211,25 @@
     <ClCompile Include="common\log.cpp" />
     <ClCompile Include="common\TaskQueue.cpp" />
     <ClCompile Include="FriendGroupDialog.cpp" />
+    <ClCompile Include="ScoreHeaderIdStorage.cpp" />
+    <ClCompile Include="CommentStorage.cpp" />
     <ClCompile Include="NormalGroupDialog.cpp" />
     <ClCompile Include="GenerateTestUserSig.cpp" />
+    <ClCompile Include="CustomListDialog.cpp" />
+    <ClCompile Include="RandomCallMessageDialog.cpp" />
+    <ClCompile Include="CellCommentWidget.cpp" />
     <ClCompile Include="MidtermGradeDialog.cpp" />
+    <ClCompile Include="GroupScoreDialog.cpp" />
     <ClCompile Include="HeatmapSegmentDialog.cpp" />
     <ClCompile Include="HeatmapViewDialog.cpp" />
+    <ClCompile Include="qcustomplot.cpp" />
     <ClCompile Include="ScheduleDialog_Heatmap.cpp" />
     <ClCompile Include="ScheduleDialog_RandomCall.cpp" />
     <ClCompile Include="RandomCallDialog.cpp" />
     <ClCompile Include="StudentAttributeDialog.cpp" />
     <ClCompile Include="ScheduleDialog_Homework.cpp" />
+    <ClCompile Include="ScheduleDialog_Notification.cpp" />
+    <ClCompile Include="NotificationViewDialog.cpp" />
     <ClCompile Include="HomeworkEditDialog.cpp" />
     <ClCompile Include="HomeworkViewDialog.cpp" />
     <ClCompile Include="ModalDialog.cpp" />
@@ -225,7 +241,6 @@
     <ClCompile Include="MemberKickDialog.cpp" />
     <ClCompile Include="TIMRestAPI.cpp" />
     <ClCompile Include="QSchoolInfoWidget.cpp" />
-    <ClCompile Include="ClassInfoDialog.cpp" />
     <ClCompile Include="RegisterDialog.cpp" />
     <ClCompile Include="ResetPwdDialog.cpp" />
     <ClCompile Include="TABaseDialog.cpp" />

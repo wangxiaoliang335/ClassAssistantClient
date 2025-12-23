@@ -48,5 +48,32 @@
         <file>res/img/home_bottom_ic_me_hover.png</file>
         <file>res/img/home_file_add_hover.png</file>
         <file>res/img/home_file_add_nor.png</file>
+        <file>res/img/class_card_ic_camera.png</file>
+        <file>res/img/class_card_ic_camera@2x.png</file>
+        <file>res/img/class_card_ic_camera@3x.png</file>
+        <file>res/img/class_card_ic_intercom.png</file>
+        <file>res/img/class_card_ic_intercom@2x.png</file>
+        <file>res/img/class_card_ic_intercom@3x.png</file>
+        <file>res/img/class_card_ic_notice.png</file>
+        <file>res/img/class_card_ic_notice@2x.png</file>
+        <file>res/img/class_card_ic_notice@3x.png</file>
+        <file>res/img/class_card_ic_school.png</file>
+        <file>res/img/class_card_ic_school@2x.png</file>
+        <file>res/img/class_card_ic_school@3x.png</file>
+        <file>res/img/class_card_ic_seating chart.png</file>
+        <file>res/img/class_card_ic_seating chart@2x.png</file>
+        <file>res/img/class_card_ic_seating chart@3x.png</file>
+        <file>res/img/class_card_ic_breaking.png</file>
+        <file>res/img/class_card_ic_breaking@2x.png</file>
+        <file>res/img/class_card_ic_breaking@3x.png</file>
+        <file>res/img/class_card_ic_hot.png</file>
+        <file>res/img/class_card_ic_hot@2x.png</file>
+        <file>res/img/class_card_ic_hot@3x.png</file>
+        <file>res/img/class_card_ic_seat.png</file>
+        <file>res/img/class_card_ic_seat@2x.png</file>
+        <file>res/img/class_card_ic_seat@3x.png</file>
+        <file>res/img/class_card_ic_random.png</file>
+        <file>res/img/class_card_ic_random@2x.png</file>
+        <file>res/img/class_card_ic_random@3x.png</file>
     </qresource>
 </RCC>

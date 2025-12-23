@@ -24,12 +24,17 @@
 #include "FriendNotifyDialog.h"
 #include "TACAddGroupWidget.h"
 #include "GroupNotifyDialog.h"
+#include "NotificationViewDialog.h"
 #include "TAHttpHandler.h"
 #include "ImSDK/includes/TIMCloud.h"
 #include "CommonInfo.h"
 #include <QMap>
+#include <QNetworkAccessManager>
+#include <QNetworkRequest>
+#include <QNetworkReply>
 
 class ScheduleDialog;
+class ChatDialog;
 
 class RowItem : public QFrame {
     Q_OBJECT
@@ -51,6 +56,8 @@ public:
 
     // 辅助函数：为 ScheduleDialog 建立群聊退出信号连接
     void connectGroupLeftSignal(ScheduleDialog* scheduleDlg, const QString& groupId);
+    // 辅助函数：为普通群 ChatDialog 建立退出/解散信号连接
+    void connectNormalGroupLeftSignal(ChatDialog* chatDlg, const QString& groupId);
 
     void InitData();
 
@@ -108,10 +115,12 @@ private:
     QPushButton* closeButton = NULL;
     QLabel* pLabel = NULL;
     TAHttpHandler* m_httpHandler = NULL;
+    QNetworkAccessManager* m_networkManager = NULL;
     QVBoxLayout* fLayout = NULL;
     QVBoxLayout* gLayout = NULL;
     TaQTWebSocket* m_pWs = NULL;
     QMap<QString, ScheduleDialog*> m_scheduleDlg;
+    QMap<QString, ChatDialog*> m_normalGroupChatDlg;
     QList<Notification> notifications;
     QSet<QString> m_setClassId;
 
@@ -130,6 +139,10 @@ private:
     QTreeWidgetItem* m_normalJoinedRoot = nullptr;
     QHash<QString, QTreeWidgetItem*> m_groupItemMap;
     QHash<QString, QJsonArray> m_prepareClassHistoryCache;
+    // 作业缓存：按群组ID和日期聚合 (group_id -> date(yyyy-MM-dd) -> (subject -> content))
+    QMap<QString, QMap<QString, QMap<QString, QString>>> m_homeworkCache;
+    // 通知缓存：按群组ID聚合 (group_id -> NotificationItem列表)
+    QMap<QString, QList<NotificationItem>> m_notificationCache;
 
     void setupFriendTree();
     void clearFriendTree();
@@ -144,4 +157,7 @@ private:
     void handleGroupItemActivated(QTreeWidgetItem* item);
     void openScheduleForGroup(const QString& groupName, const QString& unique_group_id, const QString& classid, bool iGroupOwner, bool isClassGroup);
     void processPrepareClassHistoryMessage(const QJsonObject& rootObj);
+    void fetchClassesByPrefix(const QString& schoolId);
+    // 下载群组头像并保存到本地
+    void downloadGroupAvatar(const QString& faceUrl, const QString& groupId);
 };

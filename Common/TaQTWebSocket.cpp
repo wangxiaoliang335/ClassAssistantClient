@@ -1,5 +1,7 @@
 ﻿#include "TaQTWebSocket.h"
 #include "CommonInfo.h"
+#include <QJsonDocument>
+#include <QJsonObject>
 
 QTimer* TaQTWebSocket::heartbeatTimer = NULL;
 QWebSocket* TaQTWebSocket::socket = NULL;
@@ -29,7 +31,7 @@ void TaQTWebSocket::InitWebSocket(TaQTWebSocket* wsInstance)
 
     UserInfo userinfo = CommonInfo::GetData();
     // 建立连接
-    socket->open(QUrl(QString("ws://47.100.126.194:5000/ws/%1").arg(userinfo.teacher_unique_id)));
+    socket->open(QUrl(QString("ws://47.100.126.194:5000/ws/%1").arg(userinfo.classId)));
 
     // 发送心跳
     heartbeatTimer = new QTimer(wsInstance);
@@ -45,7 +47,26 @@ void TaQTWebSocket::onMessageReceived(const QString& msg) {
     if (0 != msg.compare("pong") && 0 == msg.contains("不在线"))
     {
         m_NoticeMsg.push_back(msg);
-        emit newMessage(msg); // 发信号
+        
+        // 先解析 JSON，检查是否是家庭作业消息或通知消息
+        // 如果是家庭作业消息或通知消息，先发射相应信号
+        QJsonParseError parseError;
+        QJsonDocument jsonDoc = QJsonDocument::fromJson(msg.toUtf8(), &parseError);
+        if (parseError.error == QJsonParseError::NoError && jsonDoc.isObject()) {
+            QJsonObject obj = jsonDoc.object();
+            QString type = obj.contains("type") ? obj["type"].toString() : QString();
+            
+            if (type == "homework") {
+                // 是家庭作业消息，先发出专门信号
+                emit homeworkReceived(obj);
+            } else if (type == "notification" || type == "unread_notifications") {
+                // 是通知消息，先发出专门信号
+                emit notificationReceived(obj);
+            }
+        }
+        
+        // 然后发射通用 newMessage 信号
+        emit newMessage(msg);
     }
 }
 

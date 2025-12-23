@@ -38,9 +38,6 @@
     <ClInclude Include="CommonInfo.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="GenerateTestUserSig.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="zlib\crc32.h">
       <Filter>zlib</Filter>
     </ClInclude>
@@ -131,9 +128,6 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="ModalDialog.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="ClassInfoDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="PwdLoginModalDialog.cpp">
@@ -271,6 +265,9 @@
     <ClCompile Include="MidtermGradeDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="GroupScoreDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="HeatmapSegmentDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -292,10 +289,37 @@
     <ClCompile Include="ScheduleDialog_Homework.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="ScheduleDialog_Notification.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="NotificationViewDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="HomeworkEditDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="HomeworkViewDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ScoreHeaderIdStorage.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="CommentStorage.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="CustomListDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="RandomCallMessageDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="CellCommentWidget.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="qcustomplot.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ClassInfoDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -334,9 +358,6 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="SchoolInfoDialog.h">
-      <Filter>Header Files</Filter>
-    </QtMoc>
-    <QtMoc Include="ClassInfoDialog.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="QSchoolInfoWidget.h">
@@ -382,6 +403,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="StudentPhysiqueDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="GroupScoreDialog.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="ArrangeSeatDialog.h">
@@ -447,10 +471,31 @@
     <QtMoc Include="HomeworkViewDialog.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="NotificationViewDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <QtMoc Include="WebRTCAudioSender.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="RtmpMediaStreamer.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="CellCommentWidget.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="CommentInputDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="qcustomplot.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="RandomCallMessageDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="GenerateTestUserSig.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="ClassInfoDialog.h">
       <Filter>Header Files</Filter>
     </QtMoc>
   </ItemGroup>
