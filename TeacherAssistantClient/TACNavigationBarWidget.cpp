@@ -49,15 +49,16 @@ TACNavigationBarWidget::TACNavigationBarWidget(QWidget *parent)
     buttonGroup->addButton(phoneButton);
     layout->addWidget(phoneButton);*/
 
-    QPushButton* homeworkButton = new QPushButton(this);
-    homeworkButton->setFixedSize(BUTTON_SIZE);
-    homeworkButton->setIcon(QIcon(":/res/img/homework.png"));
-    homeworkButton->setIconSize(ICON_SIZE);
-    connect(homeworkButton, &QPushButton::clicked, this, [=]() {
+    m_homeworkButton = new QPushButton(this);
+    m_homeworkButton->setFixedSize(BUTTON_SIZE);
+    m_homeworkButton->setIcon(QIcon(":/res/img/homework.png"));
+    m_homeworkButton->setIconSize(ICON_SIZE);
+    m_homeworkButton->hide(); // 默认隐藏，根据群组设置显示
+    connect(m_homeworkButton, &QPushButton::clicked, this, [=]() {
         emit navType(TACNavigationBarWidgetType::HOMEWORK);
         });
-    buttonGroup->addButton(homeworkButton);
-    layout->addWidget(homeworkButton);
+    buttonGroup->addButton(m_homeworkButton);
+    layout->addWidget(m_homeworkButton);
 
     m_prepareClassButton = new QPushButton(this);
     m_prepareClassButton->setFixedSize(BUTTON_SIZE);
@@ -80,15 +81,16 @@ TACNavigationBarWidget::TACNavigationBarWidget(QWidget *parent)
 	buttonGroup->addButton(classButton);
 	layout->addWidget(classButton);
 
-    QPushButton* scheduleButton = new QPushButton(this);
-    scheduleButton->setFixedSize(BUTTON_SIZE);
-    scheduleButton->setIcon(QIcon(":/res/img/home_bottom_ic_crowd@2x.png"));
-    scheduleButton->setIconSize(ICON_SIZE);
-    connect(scheduleButton, &QPushButton::clicked, this, [=]() {
+    m_todayScheduleButton = new QPushButton(this);
+    m_todayScheduleButton->setFixedSize(BUTTON_SIZE);
+    m_todayScheduleButton->setIcon(QIcon(":/res/img/home_bottom_ic_crowd@2x.png"));
+    m_todayScheduleButton->setIconSize(ICON_SIZE);
+    m_todayScheduleButton->hide(); // 默认隐藏，根据群组设置显示
+    connect(m_todayScheduleButton, &QPushButton::clicked, this, [=]() {
         emit navType(TACNavigationBarWidgetType::CLASS_SCHEDULE);
         });
-    buttonGroup->addButton(scheduleButton);
-    layout->addWidget(scheduleButton);
+    buttonGroup->addButton(m_todayScheduleButton);
+    layout->addWidget(m_todayScheduleButton);
 
     QPushButton* userButton = new QPushButton(this);
     userButton->setFixedSize(BUTTON_SIZE);
@@ -168,6 +170,7 @@ TACNavigationBarWidget::TACNavigationBarWidget(QWidget *parent)
     
     // 初始化时调用一次，设置按钮的初始状态（默认隐藏，等待外部调用 setPrepareClassButtonVisible 来设置）
     updatePrepareClassButtonVisibility();
+    // 家庭作业按钮的可见性由外部调用 setHomeworkButtonVisible 来控制
 }
 
 TACNavigationBarWidget::~TACNavigationBarWidget()
@@ -213,5 +216,19 @@ void TACNavigationBarWidget::setPrepareClassButtonVisible(bool visible)
 {
     if (m_prepareClassButton) {
         m_prepareClassButton->setVisible(visible);
+    }
+}
+
+void TACNavigationBarWidget::setHomeworkButtonVisible(bool visible)
+{
+    if (m_homeworkButton) {
+        m_homeworkButton->setVisible(visible);
+    }
+}
+
+void TACNavigationBarWidget::setTodayScheduleButtonVisible(bool visible)
+{
+    if (m_todayScheduleButton) {
+        m_todayScheduleButton->setVisible(visible);
     }
 }

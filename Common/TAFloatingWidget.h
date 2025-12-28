@@ -51,5 +51,6 @@ private:
     int m_borderWidth;
     int m_radius;
     QPushButton* closeButton;
+    QPushButton* minimizeButton; // 最小化/隐藏按钮
     bool m_visibleCloseButton;
 };

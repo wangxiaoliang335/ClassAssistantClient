@@ -1178,6 +1178,8 @@ void QGroupInfo::initData(QString groupName, QString groupNumberId, bool iGroupO
         connect(m_swLinkTodaySchedule, &SimpleToggleSwitch::toggled, this, [this](bool on) {
             qDebug() << "关联今日课表:" << (on ? "开启" : "关闭");
             updateGroupSetting("link_today_schedule", on ? 1 : 0);
+            // 发出信号通知父窗口更新功能键栏
+            emit groupSettingChanged();
         });
         
         // 3. 开启对讲（保留原有的 IntercomControlWidget，但用开关替代）
@@ -1195,6 +1197,8 @@ void QGroupInfo::initData(QString groupName, QString groupNumberId, bool iGroupO
         connect(m_swLinkHomework, &SimpleToggleSwitch::toggled, this, [this](bool on) {
             qDebug() << "关联家庭作业:" << (on ? "开启" : "关闭");
             updateGroupSetting("link_homework", on ? 1 : 0);
+            // 发出信号通知父窗口更新功能键栏
+            emit groupSettingChanged();
         });
         
         // 5. 关联课前准备
@@ -1202,6 +1206,8 @@ void QGroupInfo::initData(QString groupName, QString groupNumberId, bool iGroupO
         connect(m_swLinkPreClass, &SimpleToggleSwitch::toggled, this, [this](bool on) {
             qDebug() << "关联课前准备:" << (on ? "开启" : "关闭");
             updateGroupSetting("link_pre_class_preparation", on ? 1 : 0);
+            // 发出信号通知父窗口更新功能键栏
+            emit groupSettingChanged();
         });
         
         mainLayout->addWidget(groupSwitches);
@@ -3196,6 +3202,14 @@ bool QGroupInfo::isLinkPreClassPreparationEnabled() const
 {
     if (m_swLinkPreClass) {
         return m_swLinkPreClass->isChecked();
+    }
+    return false;
+}
+
+bool QGroupInfo::isLinkHomeworkEnabled() const
+{
+    if (m_swLinkHomework) {
+        return m_swLinkHomework->isChecked();
     }
     return false;
 }

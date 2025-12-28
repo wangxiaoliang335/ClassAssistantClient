@@ -34,6 +34,10 @@ signals:
 public:
 	// 设置"课前准备"功能键的可见性
 	void setPrepareClassButtonVisible(bool visible);
+	// 设置"家庭作业"功能键的可见性
+	void setHomeworkButtonVisible(bool visible);
+	// 设置"今日课表"功能键的可见性
+	void setTodayScheduleButtonVisible(bool visible);
 
 private:
 	void initShow();
@@ -42,4 +46,6 @@ private:
 private:
 	QString m_className;
 	QPushButton* m_prepareClassButton = nullptr; // 课前准备功能键
+	QPushButton* m_homeworkButton = nullptr; // 家庭作业功能键
+	QPushButton* m_todayScheduleButton = nullptr; // 今日课表功能键
 };

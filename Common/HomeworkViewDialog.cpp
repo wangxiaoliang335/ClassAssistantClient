@@ -3,6 +3,7 @@
 #include <QDebug>
 #include <QDate>
 #include <QLocale>
+#include <algorithm>
 
 HomeworkViewDialog::HomeworkViewDialog(QWidget* parent)
     : QDialog(parent)
@@ -90,31 +91,102 @@ void HomeworkViewDialog::setDate(const QDate& date)
 
 void HomeworkViewDialog::setHomeworkContent(const QMap<QString, QString>& content)
 {
-    // 先更新/创建本次内容涉及的科目
+    // 兼容旧接口：将Map转换为HomeworkItem列表
+    QList<HomeworkItem> homeworkList;
     for (auto it = content.begin(); it != content.end(); ++it) {
-        QLabel* lbl = ensureSubjectLabel(it.key());
-        if (lbl) lbl->setText(it.value());
+        HomeworkItem item(it.key(), it.value());
+        homeworkList.append(item);
     }
+    setHomeworkList(homeworkList);
+}
 
-    // 已存在但本次没传的科目置为空提示（避免显示旧内容）
-    for (auto it = subjectLabels.begin(); it != subjectLabels.end(); ++it) {
-        const QString subject = it.key();
-        QLabel* lbl = it.value();
-        if (!content.contains(subject) || content.value(subject).trimmed().isEmpty()) {
-            lbl->setText(QString::fromUtf8(u8"（暂无作业）"));
-            lbl->setStyleSheet(
-                "QLabel {"
-                "background-color: #3b3b3b;"
-                "color: #888;"
-                "border: 1px solid #555;"
-                "border-radius: 4px;"
-                "padding: 10px;"
-                "font-size: 14px;"
-                "min-height: 60px;"
-                "font-style: italic;"
-                "}"
-            );
+void HomeworkViewDialog::setHomeworkList(const QList<HomeworkItem>& homeworkList)
+{
+    // 清空现有内容
+    if (contentLayout && scrollContentWidget) {
+        QLayoutItem* item;
+        while ((item = contentLayout->takeAt(0)) != nullptr) {
+            if (item->widget()) {
+                item->widget()->deleteLater();
+            }
+            delete item;
         }
+        subjectLabels.clear();
+    }
+    
+    if (homeworkList.isEmpty()) {
+        // 如果没有作业，显示提示
+        QLabel* emptyLabel = new QLabel(QString::fromUtf8(u8"（暂无作业）"), scrollContentWidget);
+        emptyLabel->setStyleSheet(
+            "QLabel {"
+            "background-color: #3b3b3b;"
+            "color: #888;"
+            "border: 1px solid #555;"
+            "border-radius: 4px;"
+            "padding: 10px;"
+            "font-size: 14px;"
+            "min-height: 60px;"
+            "font-style: italic;"
+            "}"
+        );
+        emptyLabel->setAlignment(Qt::AlignCenter);
+        contentLayout->addWidget(emptyLabel);
+        return;
+    }
+    
+    // 按创建时间排序（升序：最早的在前面）
+    QList<HomeworkItem> sortedList = homeworkList;
+    std::sort(sortedList.begin(), sortedList.end(), [](const HomeworkItem& a, const HomeworkItem& b) {
+        return a.createdAt < b.createdAt;
+    });
+    
+    // 按时间顺序显示所有作业
+    for (const HomeworkItem& item : sortedList) {
+        // 科目标题
+        QLabel* labelTitle = new QLabel(QString("%1:").arg(item.subject), scrollContentWidget);
+        labelTitle->setStyleSheet("font-size: 14px; color: white; font-weight: bold; padding: 5px 0;");
+        contentLayout->addWidget(labelTitle);
+        
+        // 时间标签（如果有created_at）
+        if (!item.createdAt.isEmpty()) {
+            QLabel* timeLabel = new QLabel(scrollContentWidget);
+            // 解析时间并格式化显示（格式：2025-12-23 14:07:51）
+            QDateTime dt = QDateTime::fromString(item.createdAt, "yyyy-MM-dd HH:mm:ss");
+            QString timeStr;
+            if (dt.isValid()) {
+                timeStr = dt.toString("HH:mm");
+            } else {
+                // 如果标准格式解析失败，尝试其他格式
+                dt = QDateTime::fromString(item.createdAt, Qt::ISODate);
+                if (dt.isValid()) {
+                    timeStr = dt.toString("HH:mm");
+                } else {
+                    timeStr = item.createdAt; // 如果无法解析，直接显示原字符串
+                }
+            }
+            timeLabel->setText(QString::fromUtf8(u8"时间: %1").arg(timeStr));
+            timeLabel->setStyleSheet("font-size: 12px; color: #aaa; padding: 2px 0 5px 0;");
+            contentLayout->addWidget(timeLabel);
+        }
+        
+        // 作业内容
+        QLabel* contentLbl = new QLabel(item.content, scrollContentWidget);
+        contentLbl->setWordWrap(true);
+        contentLbl->setStyleSheet(
+            "QLabel {"
+            "background-color: rgba(80, 80, 80, 200);"
+            "color: white;"
+            "border: 1px solid rgba(100, 100, 100, 150);"
+            "border-radius: 6px;"
+            "padding: 12px;"
+            "font-size: 14px;"
+            "min-height: 50px;"
+            "}"
+        );
+        contentLayout->addWidget(contentLbl);
+        
+        // 添加间距
+        contentLayout->addSpacing(10);
     }
 }
 

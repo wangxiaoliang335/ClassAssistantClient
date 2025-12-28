@@ -2331,6 +2331,12 @@ public:
 			}
 		});
 		
+		// 连接群组设置改变信号，当用户在QGroupInfo中切换开关时，通知父窗口更新功能键栏
+		connect(m_groupInfo, &QGroupInfo::groupSettingChanged, this, [this]() {
+			qDebug() << "收到群组设置改变信号，发出groupSettingsUpdated信号";
+			emit groupSettingsUpdated();
+		});
+		
 		connect(m_groupInfo, &QGroupInfo::groupDismissed, this, [this](const QString& groupId) {
 			// 如果解散的是当前群组
 			if (groupId == m_unique_group_id) {
@@ -3367,7 +3373,7 @@ public:
 	void setPrepareClassHistory(const QJsonArray& history);
 	
 	// 设置作业数据（从 FriendGroupDialog 传递）
-	void setHomeworkData(const QString& dateStr, const QString& subject, const QString& content);
+	void setHomeworkData(const QString& dateStr, const QString& subject, const QString& content, const QString& createdAt = "");
 	
 	// 设置通知数据（从 FriendGroupDialog 传递）
 	void setNotificationData(const QList<NotificationItem>& notifications);
@@ -3897,7 +3903,8 @@ private:
 	void connectHomeworkButton(QPushButton* btnTask); // 连接作业按钮（教师端）
 	void showHomeworkViewDialog(); // 显示作业展示窗口（班级端）
 	// 作业缓存：按日期聚合（当前ScheduleDialog实例对应一个群）
-	QMap<QString, QMap<QString, QString>> m_homeworkByDate; // date(yyyy-MM-dd) -> (subject -> content)
+	// 每条作业包含科目、内容和创建时间，支持同一天同一科目的多条作业
+	QMap<QString, QList<HomeworkItem>> m_homeworkByDate; // date(yyyy-MM-dd) -> QList<HomeworkItem>
 	
 	// 通知接收相关（班级端）
 	class NotificationViewDialog* notificationViewDlg = nullptr; // 通知接收对话框
@@ -6780,11 +6787,12 @@ inline void ScheduleDialog::showNextClassPrepareDialog(const QString& subject, c
 	showPrepareClassDialog(subject, time);
 }
 
-inline void ScheduleDialog::setHomeworkData(const QString& dateStr, const QString& subject, const QString& content)
+inline void ScheduleDialog::setHomeworkData(const QString& dateStr, const QString& subject, const QString& content, const QString& createdAt)
 {
 	if (!dateStr.isEmpty() && !subject.isEmpty() && !content.isEmpty()) {
-		m_homeworkByDate[dateStr][subject] = content;
-		qDebug() << "ScheduleDialog: 设置作业数据，日期:" << dateStr << "科目:" << subject;
+		HomeworkItem item(subject, content, createdAt);
+		m_homeworkByDate[dateStr].append(item);
+		qDebug() << "ScheduleDialog: 设置作业数据，日期:" << dateStr << "科目:" << subject << "创建时间:" << createdAt;
 	}
 }
 

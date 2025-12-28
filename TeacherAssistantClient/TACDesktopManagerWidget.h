@@ -1,6 +1,7 @@
 #pragma once
 
 #include "TAFloatingWidget.h"
+#include "TACFileManagerWidget.h"
 
 class TACDesktopManagerWidget  : public TAFloatingWidget
 {

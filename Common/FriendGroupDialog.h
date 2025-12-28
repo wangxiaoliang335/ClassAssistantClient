@@ -36,6 +36,9 @@
 class ScheduleDialog;
 class ChatDialog;
 
+// 前向声明 HomeworkItem（定义在 HomeworkViewDialog.h 中）
+struct HomeworkItem;
+
 class RowItem : public QFrame {
     Q_OBJECT
 public:
@@ -73,9 +76,6 @@ public:
     
     // 获取指定班级ID对应的ScheduleDialog实例
     ScheduleDialog* getScheduleDialog(const QString& classId) const;
-    
-    // 通知 TACMainDialog 更新课前准备按钮状态（供外部调用）
-    void notifyUpdatePrepareClassButton();
 
     void setTitleName(const QString& name);
 
@@ -111,6 +111,9 @@ public:
 
 private slots:
     void onWebSocketMessage(const QString& msg);
+    void notifyUpdatePrepareClassButton(); // 通知更新课前准备按钮可见性
+    void notifyUpdateHomeworkButton(); // 通知更新家庭作业按钮可见性
+    void notifyUpdateTodayScheduleButton(); // 通知更新今日课表按钮可见性
 
 private:
     bool m_dragging;
@@ -148,8 +151,9 @@ private:
     QTreeWidgetItem* m_normalJoinedRoot = nullptr;
     QHash<QString, QTreeWidgetItem*> m_groupItemMap;
     QHash<QString, QJsonArray> m_prepareClassHistoryCache;
-    // 作业缓存：按群组ID和日期聚合 (group_id -> date(yyyy-MM-dd) -> (subject -> content))
-    QMap<QString, QMap<QString, QMap<QString, QString>>> m_homeworkCache;
+    // 作业缓存：按群组ID和日期聚合 (group_id -> date(yyyy-MM-dd) -> QList<HomeworkItem>)
+    // 每条作业包含科目、内容和创建时间，支持同一天同一科目的多条作业
+    QMap<QString, QMap<QString, QList<HomeworkItem>>> m_homeworkCache;
     // 通知缓存：按群组ID聚合 (group_id -> NotificationItem列表)
     QMap<QString, QList<NotificationItem>> m_notificationCache;
 

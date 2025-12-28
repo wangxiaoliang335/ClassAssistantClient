@@ -119,6 +119,7 @@
     <ClCompile Include="TACCountDownWidget.cpp" />
     <ClCompile Include="TACDateTimeWidget.cpp" />
     <ClCompile Include="TACDesktopManagerWidget.cpp" />
+    <ClCompile Include="TACFileManagerWidget.cpp" />
     <ClCompile Include="TACFolderDialog.cpp" />
     <ClCompile Include="TACFolderWidget.cpp" />
     <ClCompile Include="TACHomeworkDialog.cpp" />
@@ -151,6 +152,7 @@
     <QtMoc Include="courseeditdialog.h" />
     <QtMoc Include="TACPrepareClassDialog.h" />
     <QtMoc Include="TACDesktopManagerWidget.h" />
+    <QtMoc Include="TACFileManagerWidget.h" />
     <QtMoc Include="TACIMDialog.h" />
     <QtMoc Include="TACHomeworkDialog.h" />
     <QtMoc Include="TACWallpaperLibraryDialog.h" />

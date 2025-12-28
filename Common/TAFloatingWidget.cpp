@@ -20,12 +20,28 @@ TAFloatingWidget::TAFloatingWidget(QWidget *parent)
     closeButton->setIconSize(QSize(22, 22));
     closeButton->setFixedSize(QSize(22, 22));
     closeButton->setStyleSheet("background: transparent;");
-
-   
     connect(closeButton, &QPushButton::clicked, this, [=]() {
         this->close();
-        });
+    });
     closeButton->hide();
+    
+    // 创建最小化/隐藏按钮（圆形按钮）
+    minimizeButton = new QPushButton(this);
+    minimizeButton->setFixedSize(QSize(22, 22));
+    minimizeButton->setStyleSheet(
+        "QPushButton {"
+        "background-color: rgba(150, 150, 150, 200);"
+        "border: none;"
+        "border-radius: 11px;"
+        "}"
+        "QPushButton:hover {"
+        "background-color: rgba(180, 180, 180, 200);"
+        "}"
+    );
+    connect(minimizeButton, &QPushButton::clicked, this, [=]() {
+        this->hide(); // 隐藏窗口
+    });
+    minimizeButton->hide();
 
 }
 void TAFloatingWidget::showEvent(QShowEvent* event)
@@ -78,20 +94,25 @@ void TAFloatingWidget::resizeEvent(QResizeEvent* event)
 {
     QWidget::resizeEvent(event);
     initShow();
+    // 右上角按钮：最小化按钮在左，关闭按钮在右
+    minimizeButton->move(this->width() - 44, 0);
     closeButton->move(this->width() - 22, 0);
 }
 
 void TAFloatingWidget::enterEvent(QEvent* event)
 {
     QWidget::enterEvent(event);
-    if(m_visibleCloseButton)
+    if(m_visibleCloseButton) {
         closeButton->show();
+        minimizeButton->show();
+    }
 }
 
 void TAFloatingWidget::leaveEvent(QEvent* event)
 {
     QWidget::leaveEvent(event);
     closeButton->hide();
+    minimizeButton->hide();
 }
 QRect TAFloatingWidget::getScreenGeometryWithTaskbar()
 {
@@ -123,6 +144,18 @@ void TAFloatingWidget::paintEvent(QPaintEvent* event)
     pen.setWidth(m_borderWidth);
     pen.setColor(m_borderColor);
     painter.strokePath(path, pen);
+    
+    // 绘制标题
+    if (!m_titleName.isEmpty()) {
+        painter.setPen(QPen(QColor(255, 255, 255))); // 白色文字
+        QFont font = painter.font();
+        font.setPointSize(12);
+        font.setBold(true);
+        painter.setFont(font);
+        
+        QRect titleRect(10, 5, width() - 35, 25); // 留出关闭按钮的空间
+        painter.drawText(titleRect, Qt::AlignCenter | Qt::AlignVCenter, m_titleName);
+    }
 }
 QString TAFloatingWidget::titleName() const
 {
@@ -168,6 +201,7 @@ void TAFloatingWidget::setTitleName(const QString& name)
 {
     if (m_titleName != name) {
         m_titleName = name;
+        update(); // 触发重绘以显示新标题
     }
 }
 QColor TAFloatingWidget::backgroundColor() const

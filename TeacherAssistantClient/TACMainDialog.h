@@ -23,6 +23,9 @@
 #include "TACHomeworkDialog.h"
 #include "TACIMDialog.h"
 #include "../Common/HomeworkViewDialog.h"
+
+// 前向声明作业项结构（与HomeworkViewDialog.h中的定义一致）
+struct HomeworkItem;
 #include "TACDesktopManagerWidget.h"
 #include "TACPrepareClassDialog.h"
 #include "TACClassWeekCourseScheduleDialog.h"
@@ -57,13 +60,22 @@ public:
 public slots:
 	// 更新课前准备按钮的可见性（根据群组设置）
 	void updatePrepareClassButtonVisibility();
+	// 更新家庭作业按钮的可见性（根据群组设置）
+	void updateHomeworkButtonVisibility();
+	// 更新今日课表按钮的可见性（根据群组设置）
+	void updateTodayScheduleButtonVisibility();
+	// 显示壁纸对话框
+	void showWallpaperDialog();
 	
 protected:
 	void paintEvent(QPaintEvent* event) override;
 	void resizeEvent(QResizeEvent* event) override;
 
-private:
+public slots:
+	// 更新背景壁纸
 	void updateBackground(const QString& fileName);
+	
+private:
 	void downloadAvatarFromUrl(const QString& avatarUrl, const QString& savePath);
 
 // 更新课前准备按钮的可见性（根据群组设置）- 已移动到 public slots
@@ -138,8 +150,9 @@ private:
 	QPointer<HomeworkViewDialog> homeworkViewDialog; // 作业展示窗口（使用 ScheduleDialog 中的窗口）
 	QPointer<TACIMDialog> imDialog;
 	
-	// 作业缓存：按日期聚合 (date(yyyy-MM-dd) -> (subject -> content))
-	QMap<QString, QMap<QString, QString>> m_homeworkByDate;
+	// 作业缓存：按日期聚合 (date(yyyy-MM-dd) -> QList<HomeworkItem>)
+	// 每条作业包含科目、内容和创建时间，支持同一天同一科目的多条作业
+	QMap<QString, QList<HomeworkItem>> m_homeworkByDate;
 	QPointer<FriendGroupDialog> friendGrpDlg;
 
 	QPointer<AudioReceiver> m_audioReceiver;

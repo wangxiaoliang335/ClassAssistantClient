@@ -107,10 +107,10 @@ void ScheduleDialog::showHomeworkViewDialog()
     // 从缓存中读取当前日期的作业数据
     QDate currentDate = QDate::currentDate();
     QString dateStr = currentDate.toString(QStringLiteral("yyyy-MM-dd"));
-    QMap<QString, QString> homeworkContent = m_homeworkByDate.value(dateStr);
+    QList<HomeworkItem> homeworkList = m_homeworkByDate.value(dateStr);
     
     homeworkViewDlg->setDate(currentDate);
-    homeworkViewDlg->setHomeworkContent(homeworkContent);
+    homeworkViewDlg->setHomeworkList(homeworkList); // 传递作业列表而不是Map
     homeworkViewDlg->show();
     homeworkViewDlg->raise();
     homeworkViewDlg->activateWindow();

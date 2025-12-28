@@ -27,8 +27,15 @@ TACDesktopManagerWidget::TACDesktopManagerWidget(QWidget *parent)
 	label->setAlignment(Qt::AlignCenter);
 	layout->addWidget(label);
 
-	QPushButton* fileManagerButton = new QPushButton("文件管理", this);
+	QPushButton* fileManagerButton = new QPushButton("创建文件管理窗口", this);
 	layout->addWidget(fileManagerButton);
+	connect(fileManagerButton, &QPushButton::clicked, this, [this]() {
+		// 创建文件管理窗口
+		TACFileManagerWidget* fileManager = new TACFileManagerWidget(this->parentWidget());
+		fileManager->show();
+		fileManager->raise();
+		fileManager->activateWindow();
+	});
 
 	QPushButton* createFolderButton = new QPushButton("创建文件夹", this);
 	layout->addWidget(createFolderButton);
@@ -42,8 +49,20 @@ TACDesktopManagerWidget::TACDesktopManagerWidget(QWidget *parent)
 	QPushButton* classButton = new QPushButton("学校/班级", this);
 	layout->addWidget(classButton);
 
-	QPushButton* wallpaperButton = new QPushButton("壁纸", this);
+	QPushButton* wallpaperButton = new QPushButton(QString::fromUtf8(u8"壁纸"), this);
 	layout->addWidget(wallpaperButton);
+	connect(wallpaperButton, &QPushButton::clicked, this, [this]() {
+		// 通过父窗口查找 TACMainDialog 并显示壁纸对话框
+		QWidget* parentWidget = this->parentWidget();
+		while (parentWidget) {
+			if (parentWidget->metaObject()->className() == QString("TACMainDialog")) {
+				// 使用 QMetaObject 调用方法显示壁纸对话框
+				QMetaObject::invokeMethod(parentWidget, "showWallpaperDialog", Qt::QueuedConnection);
+				break;
+			}
+			parentWidget = parentWidget->parentWidget();
+		}
+	});
 
 	QPushButton* courseScheduleButton = new QPushButton("教师课程表", this);
 	layout->addWidget(courseScheduleButton);

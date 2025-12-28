@@ -80,13 +80,15 @@ void TACMainDialog::Init(QString classId, int user_id)
         const QString dateStr = homeworkData.value("date").toString();
         const QString subject = homeworkData.value("subject").toString().trimmed();
         const QString content = homeworkData.value("content").toString().trimmed();
+        const QString createdAt = homeworkData.value("created_at").toString(); // 获取创建时间
         if (dateStr.isEmpty() || subject.isEmpty() || content.isEmpty()) {
             return;
         }
 
-        // 缓存作业数据：按日期聚合
-        m_homeworkByDate[dateStr][subject] = content;
-        qDebug() << "TACMainDialog: 收到作业消息，已缓存到日期:" << dateStr << "科目:" << subject;
+        // 创建作业项并缓存：按日期聚合，支持同一天同一科目的多条作业
+        HomeworkItem item(subject, content, createdAt);
+        m_homeworkByDate[dateStr].append(item);
+        qDebug() << "TACMainDialog: 收到作业消息，已缓存到日期:" << dateStr << "科目:" << subject << "创建时间:" << createdAt;
         
         // 如果 homeworkViewDialog 已创建，更新其内容
         if (homeworkViewDialog) {
@@ -95,7 +97,7 @@ void TACMainDialog::Init(QString classId, int user_id)
                 date = QDate::currentDate();
             }
             homeworkViewDialog->setDate(date);
-            homeworkViewDialog->setHomeworkContent(m_homeworkByDate.value(dateStr));
+            homeworkViewDialog->setHomeworkList(m_homeworkByDate.value(dateStr));
         }
     });
     
@@ -456,10 +458,10 @@ void TACMainDialog::Init(QString classId, int user_id)
             // 从缓存中读取当前日期的作业数据
             QDate currentDate = QDate::currentDate();
             QString dateStr = currentDate.toString("yyyy-MM-dd");
-            QMap<QString, QString> homeworkContent = m_homeworkByDate.value(dateStr);
+            QList<HomeworkItem> homeworkList = m_homeworkByDate.value(dateStr);
             
             homeworkViewDialog->setDate(currentDate);
-            homeworkViewDialog->setHomeworkContent(homeworkContent);
+            homeworkViewDialog->setHomeworkList(homeworkList); // 使用新的列表接口
             
             // 获取主屏幕几何信息，居中显示
             QScreen* screen = QApplication::primaryScreen();
@@ -499,8 +501,18 @@ void TACMainDialog::Init(QString classId, int user_id)
                             scheduleDlg->showNextClassPrepareDialog(nextClass.first, nextClass.second);
                         } else {
                             // 如果没有下节课，显示提示
-                            QMessageBox::information(this, QString::fromUtf8(u8"提示"), 
-                                                   QString::fromUtf8(u8"今日暂无下一节课"));
+                            TACStyledMessageDialog* msgDialog = new TACStyledMessageDialog(
+                                QString::fromUtf8(u8"提示"), 
+                                QString::fromUtf8(u8"今日暂无下一节课"), 
+                                this);
+                            // 居中显示
+                            QRect parentRect = this->geometry();
+                            int x = parentRect.x() + (parentRect.width() - msgDialog->width()) / 2;
+                            int y = parentRect.y() + (parentRect.height() - msgDialog->height()) / 2;
+                            msgDialog->move(x, y);
+                            msgDialog->show();
+                            msgDialog->raise();
+                            msgDialog->activateWindow();
                         }
                     }
                 }
@@ -967,4 +979,99 @@ void TACMainDialog::updatePrepareClassButtonVisibility()
     
     // 更新"课前准备"功能键的可见性：如果"关联课前准备"为true，则显示；否则隐藏
     navBarWidget->setPrepareClassButtonVisible(linkPreClassPreparationEnabled);
+}
+
+// 更新家庭作业按钮的可见性（根据群组设置）
+void TACMainDialog::updateHomeworkButtonVisibility()
+{
+    qDebug() << "TACMainDialog::updateHomeworkButtonVisibility() called";
+    if (!navBarWidget) {
+        qDebug() << "navBarWidget is null, returning";
+        return;
+    }
+    
+    bool linkHomeworkEnabled = false;
+    if (friendGrpDlg) {
+        ClassLoginInfo loginInfo = CommonInfo::GetClassLoginInfo();
+        if (!loginInfo.class_id.isEmpty()) {
+            // 确保ScheduleDialog已创建（如果不存在则先创建，但不显示）
+            friendGrpDlg->ensureScheduleDialogCreated(loginInfo.class_id);
+            ScheduleDialog* scheduleDlg = friendGrpDlg->getScheduleDialog(loginInfo.class_id);
+            if (scheduleDlg) {
+                QGroupInfo* groupInfo = scheduleDlg->getGroupInfo();
+                if (groupInfo) {
+                    // 根据"关联家庭作业"来判断是否显示家庭作业功能键
+                    linkHomeworkEnabled = groupInfo->isLinkHomeworkEnabled();
+                    qDebug() << "Group ID:" << loginInfo.class_id << ", link_homework enabled:" << linkHomeworkEnabled;
+                } else {
+                    qDebug() << "QGroupInfo is null for group ID:" << loginInfo.class_id;
+                }
+            } else {
+                qDebug() << "ScheduleDialog is null for group ID:" << loginInfo.class_id;
+            }
+        } else {
+            qDebug() << "Class ID is empty, cannot check group settings.";
+        }
+    } else {
+        qDebug() << "FriendGroupDialog is null.";
+    }
+    
+    // 更新"家庭作业"功能键的可见性：如果"关联家庭作业"为true，则显示；否则隐藏
+    navBarWidget->setHomeworkButtonVisible(linkHomeworkEnabled);
+    qDebug() << "Set homework button visibility to:" << linkHomeworkEnabled;
+}
+
+// 更新今日课表按钮的可见性（根据群组设置）
+void TACMainDialog::updateTodayScheduleButtonVisibility()
+{
+    qDebug() << "TACMainDialog::updateTodayScheduleButtonVisibility() called";
+    if (!navBarWidget) {
+        qDebug() << "navBarWidget is null, returning";
+        return;
+    }
+    
+    bool linkTodayScheduleEnabled = false;
+    if (friendGrpDlg) {
+        ClassLoginInfo loginInfo = CommonInfo::GetClassLoginInfo();
+        if (!loginInfo.class_id.isEmpty()) {
+            // 确保ScheduleDialog已创建（如果不存在则先创建，但不显示）
+            friendGrpDlg->ensureScheduleDialogCreated(loginInfo.class_id);
+            ScheduleDialog* scheduleDlg = friendGrpDlg->getScheduleDialog(loginInfo.class_id);
+            if (scheduleDlg) {
+                QGroupInfo* groupInfo = scheduleDlg->getGroupInfo();
+                if (groupInfo) {
+                    // 根据"关联今日课表"来判断是否显示今日课表功能键
+                    linkTodayScheduleEnabled = groupInfo->isLinkTodayScheduleEnabled();
+                    qDebug() << "Group ID:" << loginInfo.class_id << ", link_today_schedule enabled:" << linkTodayScheduleEnabled;
+                } else {
+                    qDebug() << "QGroupInfo is null for group ID:" << loginInfo.class_id;
+                }
+            } else {
+                qDebug() << "ScheduleDialog is null for group ID:" << loginInfo.class_id;
+            }
+        } else {
+            qDebug() << "Class ID is empty, cannot check group settings.";
+        }
+    } else {
+        qDebug() << "FriendGroupDialog is null.";
+    }
+    
+    // 更新"今日课表"功能键的可见性：如果"关联今日课表"为true，则显示；否则隐藏
+    navBarWidget->setTodayScheduleButtonVisible(linkTodayScheduleEnabled);
+    qDebug() << "Set today schedule button visibility to:" << linkTodayScheduleEnabled;
+}
+
+// 显示壁纸对话框
+void TACMainDialog::showWallpaperDialog()
+{
+    if (wallpaperLibraryDialog) {
+        QScreen* screen = QApplication::primaryScreen();
+        QRect screenGeometry = screen->geometry();
+        int x = (screenGeometry.width() - wallpaperLibraryDialog->width()) / 2;
+        int y = (screenGeometry.height() - wallpaperLibraryDialog->height()) / 2;
+        wallpaperLibraryDialog->move(x, y);
+        wallpaperLibraryDialog->show();
+        wallpaperLibraryDialog->raise();
+        wallpaperLibraryDialog->activateWindow();
+    }
 }

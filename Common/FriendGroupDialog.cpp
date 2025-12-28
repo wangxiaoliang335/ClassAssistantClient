@@ -23,6 +23,7 @@
 #include <QUrlQuery>
 #include <cstring>
 #include "CommonInfo.h"
+#include "HomeworkViewDialog.h"  // 包含 HomeworkItem 定义
 
 // 定义 TempRoomStorage 的静态成员变量
 QMap<QString, TempRoomInfo> TempRoomStorage::s_tempRooms;
@@ -388,12 +389,12 @@ void FriendGroupDialog::openScheduleForGroup(const QString& groupName, const QSt
             }
             // 传递缓存的作业数据到 ScheduleDialog
             if (m_homeworkCache.contains(unique_group_id)) {
-                const QMap<QString, QMap<QString, QString>>& homeworkByDate = m_homeworkCache[unique_group_id];
+                const QMap<QString, QList<HomeworkItem>>& homeworkByDate = m_homeworkCache[unique_group_id];
                 for (auto it = homeworkByDate.begin(); it != homeworkByDate.end(); ++it) {
                     const QString& dateStr = it.key();
-                    const QMap<QString, QString>& subjectContent = it.value();
-                    for (auto subIt = subjectContent.begin(); subIt != subjectContent.end(); ++subIt) {
-                        dlg->setHomeworkData(dateStr, subIt.key(), subIt.value());
+                    const QList<HomeworkItem>& homeworkList = it.value();
+                    for (const HomeworkItem& item : homeworkList) {
+                        dlg->setHomeworkData(dateStr, item.subject, item.content, item.createdAt);
                     }
                 }
             }
@@ -405,6 +406,8 @@ void FriendGroupDialog::openScheduleForGroup(const QString& groupName, const QSt
             // 连接群组设置更新信号
             connect(dlg, &ScheduleDialog::groupSettingsUpdated, this, [this]() {
                 notifyUpdatePrepareClassButton();
+                notifyUpdateHomeworkButton();
+                notifyUpdateTodayScheduleButton();
             });
             m_scheduleDlg[unique_group_id] = dlg;
         }
@@ -1537,19 +1540,24 @@ void FriendGroupDialog::InitWebSocket()
             const QString dateStr = homeworkData.value(QStringLiteral("date")).toString();
             const QString subject = homeworkData.value(QStringLiteral("subject")).toString().trimmed();
             const QString content = homeworkData.value(QStringLiteral("content")).toString().trimmed();
+            const QString createdAt = homeworkData.value(QStringLiteral("created_at")).toString(); // 获取创建时间
             if (dateStr.isEmpty() || subject.isEmpty() || content.isEmpty()) {
                 return;
             }
 
-            // 缓存作业数据：按群组ID和日期聚合
-            m_homeworkCache[groupId][dateStr][subject] = content;
-            qDebug() << "FriendGroupDialog: 收到作业消息，已缓存到群组:" << groupId << "日期:" << dateStr << "科目:" << subject;
+            // 创建作业项
+            HomeworkItem homeworkItem(subject, content, createdAt);
+            
+            // 缓存作业数据：按群组ID和日期聚合，支持同一天同一科目的多条作业
+            m_homeworkCache[groupId][dateStr].append(homeworkItem);
+            qDebug() << "FriendGroupDialog: 收到作业消息，已缓存到群组:" << groupId << "日期:" << dateStr 
+                     << "科目:" << subject << "创建时间:" << createdAt;
             
             // 如果对应的 ScheduleDialog 已创建，更新其缓存
             if (m_scheduleDlg.contains(groupId)) {
                 ScheduleDialog* dlg = m_scheduleDlg[groupId];
                 if (dlg) {
-                    dlg->setHomeworkData(dateStr, subject, content);
+                    dlg->setHomeworkData(dateStr, subject, content, createdAt);
                 }
             }
         });
@@ -1809,12 +1817,12 @@ void FriendGroupDialog::ensureScheduleDialogCreated(const QString& classId)
     }
     // 传递缓存的作业数据到 ScheduleDialog
     if (m_homeworkCache.contains(groupId)) {
-        const QMap<QString, QMap<QString, QString>>& homeworkByDate = m_homeworkCache[groupId];
+        const QMap<QString, QList<HomeworkItem>>& homeworkByDate = m_homeworkCache[groupId];
         for (auto it = homeworkByDate.begin(); it != homeworkByDate.end(); ++it) {
             const QString& dateStr = it.key();
-            const QMap<QString, QString>& subjectContent = it.value();
-            for (auto subIt = subjectContent.begin(); subIt != subjectContent.end(); ++subIt) {
-                dlg->setHomeworkData(dateStr, subIt.key(), subIt.value());
+            const QList<HomeworkItem>& homeworkList = it.value();
+            for (const HomeworkItem& item : homeworkList) {
+                dlg->setHomeworkData(dateStr, item.subject, item.content, item.createdAt);
             }
         }
     }
@@ -1826,6 +1834,8 @@ void FriendGroupDialog::ensureScheduleDialogCreated(const QString& classId)
     // 连接群组设置更新信号
     connect(dlg, &ScheduleDialog::groupSettingsUpdated, this, [this]() {
         notifyUpdatePrepareClassButton();
+        notifyUpdateHomeworkButton();
+        notifyUpdateTodayScheduleButton();
     });
     m_scheduleDlg[groupId] = dlg;
     
@@ -1851,6 +1861,58 @@ void FriendGroupDialog::notifyUpdatePrepareClassButton()
             qDebug() << "QMetaObject::invokeMethod result:" << result;
             if (!result) {
                 qWarning() << "Failed to invoke updatePrepareClassButtonVisibility method";
+            }
+            break;
+        }
+        parentWidget = parentWidget->parentWidget();
+    }
+    if (!parentWidget) {
+        qWarning() << "TACMainDialog not found in parent widget chain";
+    }
+}
+
+void FriendGroupDialog::notifyUpdateHomeworkButton()
+{
+    // 通过 parentWidget() 查找 TACMainDialog
+    QWidget* parentWidget = this->parentWidget();
+    qDebug() << "FriendGroupDialog::notifyUpdateHomeworkButton() called, parentWidget:" << parentWidget;
+    while (parentWidget) {
+        QString className = parentWidget->metaObject()->className();
+        qDebug() << "Checking parent widget class:" << className;
+        // 使用类名匹配
+        if (className == QString("TACMainDialog")) {
+            qDebug() << "Found TACMainDialog, calling updateHomeworkButtonVisibility";
+            // 使用 QMetaObject 调用方法
+            bool result = QMetaObject::invokeMethod(parentWidget, "updateHomeworkButtonVisibility", Qt::QueuedConnection);
+            qDebug() << "QMetaObject::invokeMethod result:" << result;
+            if (!result) {
+                qWarning() << "Failed to invoke updateHomeworkButtonVisibility method";
+            }
+            break;
+        }
+        parentWidget = parentWidget->parentWidget();
+    }
+    if (!parentWidget) {
+        qWarning() << "TACMainDialog not found in parent widget chain";
+    }
+}
+
+void FriendGroupDialog::notifyUpdateTodayScheduleButton()
+{
+    // 通过 parentWidget() 查找 TACMainDialog
+    QWidget* parentWidget = this->parentWidget();
+    qDebug() << "FriendGroupDialog::notifyUpdateTodayScheduleButton() called, parentWidget:" << parentWidget;
+    while (parentWidget) {
+        QString className = parentWidget->metaObject()->className();
+        qDebug() << "Checking parent widget class:" << className;
+        // 使用类名匹配
+        if (className == QString("TACMainDialog")) {
+            qDebug() << "Found TACMainDialog, calling updateTodayScheduleButtonVisibility";
+            // 使用 QMetaObject 调用方法
+            bool result = QMetaObject::invokeMethod(parentWidget, "updateTodayScheduleButtonVisibility", Qt::QueuedConnection);
+            qDebug() << "QMetaObject::invokeMethod result:" << result;
+            if (!result) {
+                qWarning() << "Failed to invoke updateTodayScheduleButtonVisibility method";
             }
             break;
         }
