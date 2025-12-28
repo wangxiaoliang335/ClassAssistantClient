@@ -83,6 +83,18 @@
     <ClCompile Include="TACClassWeekCourseScheduleDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="TACSubjectSelectDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="TACSubjectEditDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="TACWarningDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="TACCourseScheduleMenuDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="schedulecelllabel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -169,6 +181,18 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="TACClassWeekCourseScheduleDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="TACSubjectSelectDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="TACSubjectEditDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="TACWarningDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="TACCourseScheduleMenuDialog.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="mainwindow.h">

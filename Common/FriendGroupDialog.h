@@ -67,6 +67,15 @@ public:
     
     // 打开指定的班级群窗口
     void openClassGroup(const QString& classId, const QString& groupName = "");
+    
+    // 确保指定班级ID的ScheduleDialog已创建（如果不存在则创建，但不显示）
+    void ensureScheduleDialogCreated(const QString& classId);
+    
+    // 获取指定班级ID对应的ScheduleDialog实例
+    ScheduleDialog* getScheduleDialog(const QString& classId) const;
+    
+    // 通知 TACMainDialog 更新课前准备按钮状态（供外部调用）
+    void notifyUpdatePrepareClassButton();
 
     void setTitleName(const QString& name);
 

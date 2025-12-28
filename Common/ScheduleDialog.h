@@ -29,6 +29,7 @@
 #include <QAudioFormat>
 #include <QIODevice>
 #include <QTimer>
+#include <QMetaObject>
 #include <QMediaPlayer>
 #include <QAudioOutput>
 #include <qprogressbar.h>
@@ -88,6 +89,8 @@ QT_END_NAMESPACE_XLSX
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QJsonDocument>
+// 独立课前准备编辑对话框
+#include "PrepareClassEditDialog.h"
 // 前向声明，避免循环依赖
 class HeatmapSegmentDialog;
 class HeatmapViewDialog;
@@ -2091,6 +2094,22 @@ public:
 							if (m_groupInfo)
 							{
 								m_groupInfo->InitGroupMember(group_id, m_groupMemberInfo);
+								
+								// 解析群组设置字段并更新UI
+								if (dataObj.contains("group_info") && dataObj["group_info"].isObject()) {
+									QJsonObject groupInfoObj = dataObj["group_info"].toObject();
+									int receiveNotification = groupInfoObj.value("receive_notification").toInt(0);
+									int linkTodaySchedule = groupInfoObj.value("link_today_schedule").toInt(0);
+									int enableIntercom = groupInfoObj.value("enable_intercom").toInt(0);
+									int linkHomework = groupInfoObj.value("link_homework").toInt(0);
+									int linkPreClassPreparation = groupInfoObj.value("link_pre_class_preparation").toInt(0);
+									
+									m_groupInfo->setGroupSettings(receiveNotification, linkTodaySchedule, enableIntercom,
+																  linkHomework, linkPreClassPreparation);
+									
+									// 发出信号通知父窗口群组设置已更新
+									emit groupSettingsUpdated();
+								}
 							}
 							
 							// 根据当前用户的 is_voice_enabled 更新对讲按钮状态
@@ -3365,6 +3384,7 @@ public:
 
 signals:
 	void groupLeft(const QString& groupId); // 群聊退出信号，通知父窗口刷新群列表
+	void groupSettingsUpdated(); // 群组设置更新信号，通知父窗口更新相关UI
 
 public:
 	// 排座功能：根据学生数据自动排座
@@ -3827,6 +3847,11 @@ private:
 	QString m_subjectButtonStyle;
 	bool m_isClassGroup = true; // 默认为班级群
 	QGroupInfo* m_groupInfo;
+public:
+	QGroupInfo* getGroupInfo() const { return m_groupInfo; } // 获取群信息对话框实例
+	QPair<QString, QString> getNextClassInfo(const QTime& currentTime) const; // 获取下节课的科目和时间
+	void showNextClassPrepareDialog(const QString& subject, const QString& time); // 显示下节课的课前准备
+private:
 	TAHttpHandler* m_httpHandler = NULL;
 	QNetworkAccessManager* m_networkManager = nullptr; // 用于下载Excel文件
 	// 成绩表拉取去重：同一个 class_id + term 在同一窗口生命周期只请求一次
@@ -3884,6 +3909,7 @@ private:
 	void showPrepareClassDialog(const QString& subject, const QString& time = QString()); // 显示课前准备对话框
 	void sendPrepareClassContent(const QString& subject, const QString& content, const QString& time = QString()); // 发送课前准备内容
 	QString prepareClassCacheKey(const QString& subject, const QString& time) const;
+	class PrepareClassEditDialog* prepareClassViewDlg = nullptr; // 课前准备查看窗口（复用显示/隐藏）
 	QMap<QString, QString> m_prepareClassCache; // 课前准备内容缓存（科目|时间 -> 内容）
 	QJsonArray m_prepareClassHistoryData; // 课前准备历史原始数据
 
@@ -6591,77 +6617,21 @@ inline void ScheduleDialog::onSubjectButtonClicked()
 // 显示课前准备对话框
 inline void ScheduleDialog::showPrepareClassDialog(const QString& subject, const QString& time)
 {
-	// 创建对话框
-	QDialog* dlg = new QDialog(this);
-	dlg->setWindowTitle(QString::fromUtf8(u8"课前准备"));
-	dlg->setFixedSize(500, 400);
-	dlg->setStyleSheet(
-		"QDialog { background-color: #2b2b2b; }"
-		"QLabel { color: white; font-size: 14px; }"
-		"QTextEdit { background-color: #3b3b3b; color: white; border: 1px solid #555; border-radius: 4px; padding: 8px; }"
-		"QPushButton { background-color: #4a4a4a; color: white; border: 1px solid #666; border-radius: 4px; padding: 8px 16px; font-size: 14px; }"
-		"QPushButton:hover { background-color: #5a5a5a; }"
-		"QPushButton:pressed { background-color: #3a3a3a; }"
-	);
-	
-	QVBoxLayout* mainLayout = new QVBoxLayout(dlg);
-	mainLayout->setSpacing(15);
-	mainLayout->setContentsMargins(20, 20, 20, 20);
-	
-	// 提示文字
-	QLabel* lblPrompt = new QLabel(QString::fromUtf8(u8"请输入课前准备内容"), dlg);
-	lblPrompt->setStyleSheet("color: white; font-size: 14px;");
-	mainLayout->addWidget(lblPrompt);
-	
-	// 文本输入框
-	QTextEdit* textEdit = new QTextEdit(dlg);
-	textEdit->setPlaceholderText(QString::fromUtf8(u8"请输入课前准备内容..."));
-	textEdit->setMinimumHeight(200);
 	const QString cacheKey = prepareClassCacheKey(subject, time);
-	if (m_prepareClassCache.contains(cacheKey)) {
-		textEdit->setPlainText(m_prepareClassCache.value(cacheKey));
+	// 复用同一个窗口：关闭按钮只隐藏，下次点菜单再显示
+	if (!prepareClassViewDlg) {
+		prepareClassViewDlg = new PrepareClassEditDialog(this);
 	}
-	mainLayout->addWidget(textEdit, 1);
-	
-	// 按钮布局
-	QHBoxLayout* btnLayout = new QHBoxLayout(dlg);
-	btnLayout->addStretch();
-	
-	QPushButton* btnCancel = new QPushButton(QString::fromUtf8(u8"取消"), dlg);
-	btnCancel->setFixedSize(80, 35);
-	btnCancel->setStyleSheet(
-		"QPushButton { background-color: #4a4a4a; color: white; }"
-		"QPushButton:hover { background-color: #5a5a5a; }"
-	);
-	
-	QPushButton* btnConfirm = new QPushButton(QString::fromUtf8(u8"确定"), dlg);
-	btnConfirm->setFixedSize(80, 35);
-	btnConfirm->setStyleSheet(
-		"QPushButton { background-color: #0078d4; color: white; }"
-		"QPushButton:hover { background-color: #0063b1; }"
-	);
-	
-	btnLayout->addWidget(btnCancel);
-	btnLayout->addWidget(btnConfirm);
-	mainLayout->addLayout(btnLayout);
-	
-	// 连接按钮事件
-	connect(btnCancel, &QPushButton::clicked, dlg, &QDialog::reject);
-	connect(btnConfirm, &QPushButton::clicked, dlg, [=]() {
-		QString content = textEdit->toPlainText().trimmed();
-		if (content.isEmpty()) {
-			QMessageBox::warning(dlg, QString::fromUtf8(u8"提示"), QString::fromUtf8(u8"请输入课前准备内容！"));
-			return;
-		}
-		// 保存到缓存
-		m_prepareClassCache[cacheKey] = content;
-		sendPrepareClassContent(subject, content, time);
-		dlg->accept();
-	});
-	
-	// 显示对话框
-	dlg->exec();
-	dlg->deleteLater();
+
+	const QString header = time.trimmed().isEmpty()
+		? QString::fromUtf8(u8"课前准备 - ") + subject
+		: QString::fromUtf8(u8"课前准备 - ") + subject + QString::fromUtf8(u8"  ") + time;
+	prepareClassViewDlg->setHeaderText(header);
+	prepareClassViewDlg->setInitialContent(m_prepareClassCache.value(cacheKey));
+
+	prepareClassViewDlg->show();
+	prepareClassViewDlg->raise();
+	prepareClassViewDlg->activateWindow();
 }
 
 // 发送课前准备内容（通过WebSocket发送到群组）
@@ -6711,6 +6681,103 @@ inline void ScheduleDialog::sendPrepareClassContent(const QString& subject, cons
 inline QString ScheduleDialog::prepareClassCacheKey(const QString& subject, const QString& time) const
 {
 	return subject.trimmed() + "|" + time.trimmed();
+}
+
+// 获取下节课的科目和时间
+inline QPair<QString, QString> ScheduleDialog::getNextClassInfo(const QTime& currentTime) const
+{
+	// 从实际显示的按钮中获取课程信息
+	if (m_timeButtons.isEmpty() || m_subjectButtons.isEmpty() || m_timeButtons.size() != m_subjectButtons.size()) {
+		// 如果按钮列表为空或数量不匹配，使用默认课程表
+		auto dailySchedule = buildDefaultDailySchedule();
+		const QStringList& subjects = dailySchedule.second;
+		const QStringList& times = dailySchedule.first;
+		
+		// 定义需要跳过的科目（这些科目不算是"课"）
+		QSet<QString> skipSubjects;
+		skipSubjects << QStringLiteral("午饭") << QStringLiteral("午休") 
+		             << QStringLiteral("大课间") << QStringLiteral("眼保健操");
+		
+		// 找到当前时间之后的第一节课
+		for (int i = 0; i < times.size() && i < subjects.size(); ++i) {
+			QString timeStr = times[i];
+			QString subject = subjects[i];
+			
+			// 跳过空科目和特殊科目
+			if (subject.isEmpty() || skipSubjects.contains(subject)) {
+				continue;
+			}
+			
+			// 解析时间字符串（格式可能是 "07:20" 或 "7:20"）
+			QTime classTime;
+			if (timeStr.contains(QStringLiteral(":"))) {
+				QStringList parts = timeStr.split(QStringLiteral(":"));
+				if (parts.size() >= 2) {
+					bool ok1, ok2;
+					int hour = parts[0].toInt(&ok1);
+					int minute = parts[1].toInt(&ok2);
+					if (ok1 && ok2) {
+						classTime = QTime(hour, minute);
+						if (classTime.isValid() && classTime > currentTime) {
+							return qMakePair(subject, timeStr);
+						}
+					}
+				}
+			}
+		}
+	} else {
+		// 从按钮中获取实际显示的课程信息
+		QSet<QString> skipSubjects;
+		skipSubjects << QStringLiteral("午饭") << QStringLiteral("午休") 
+		             << QStringLiteral("大课间") << QStringLiteral("眼保健操");
+		
+		for (int i = 0; i < m_timeButtons.size() && i < m_subjectButtons.size(); ++i) {
+			QPushButton* timeBtn = m_timeButtons[i];
+			QPushButton* subjectBtn = m_subjectButtons[i];
+			if (!timeBtn || !subjectBtn) continue;
+			
+			QString timeStr = timeBtn->property("raw_time").toString();
+			if (timeStr.isEmpty()) {
+				timeStr = timeBtn->text();
+			}
+			
+			QString subject = subjectBtn->property("subject").toString();
+			if (subject.isEmpty()) {
+				subject = subjectBtn->text();
+			}
+			
+			// 跳过空科目和特殊科目
+			if (subject.isEmpty() || skipSubjects.contains(subject)) {
+				continue;
+			}
+			
+			// 解析时间字符串
+			QTime classTime;
+			if (timeStr.contains(QStringLiteral(":"))) {
+				QStringList parts = timeStr.split(QStringLiteral(":"));
+				if (parts.size() >= 2) {
+					bool ok1, ok2;
+					int hour = parts[0].toInt(&ok1);
+					int minute = parts[1].toInt(&ok2);
+					if (ok1 && ok2) {
+						classTime = QTime(hour, minute);
+						if (classTime.isValid() && classTime > currentTime) {
+							return qMakePair(subject, timeStr);
+						}
+					}
+				}
+			}
+		}
+	}
+	
+	// 如果没有找到下节课，返回空对
+	return qMakePair(QString(), QString());
+}
+
+// 显示下节课的课前准备
+inline void ScheduleDialog::showNextClassPrepareDialog(const QString& subject, const QString& time)
+{
+	showPrepareClassDialog(subject, time);
 }
 
 inline void ScheduleDialog::setHomeworkData(const QString& dateStr, const QString& subject, const QString& content)

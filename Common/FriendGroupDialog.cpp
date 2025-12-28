@@ -19,7 +19,10 @@
 #include <QNetworkAccessManager>
 #include <QNetworkRequest>
 #include <QNetworkReply>
+#include <QUrl>
+#include <QUrlQuery>
 #include <cstring>
+#include "CommonInfo.h"
 
 // 定义 TempRoomStorage 的静态成员变量
 QMap<QString, TempRoomInfo> TempRoomStorage::s_tempRooms;
@@ -399,6 +402,10 @@ void FriendGroupDialog::openScheduleForGroup(const QString& groupName, const QSt
                 dlg->setNotificationData(m_notificationCache[unique_group_id]);
             }
             connectGroupLeftSignal(dlg, unique_group_id);
+            // 连接群组设置更新信号
+            connect(dlg, &ScheduleDialog::groupSettingsUpdated, this, [this]() {
+                notifyUpdatePrepareClassButton();
+            });
             m_scheduleDlg[unique_group_id] = dlg;
         }
 
@@ -467,7 +474,7 @@ FriendGroupDialog::FriendGroupDialog(QWidget* parent, TaQTWebSocket* pWs)
     m_networkManager = new QNetworkAccessManager(this);
     if (m_httpHandler)
     {
-        connect(m_httpHandler, &TAHttpHandler::success, this, [=](const QString& responseString) {
+        connect(m_httpHandler, &TAHttpHandler::success, this, [this](const QString& responseString) {
             //成功消息就不发送了
             QJsonDocument jsonDoc = QJsonDocument::fromJson(responseString.toUtf8());
             if (jsonDoc.isObject()) {
@@ -854,7 +861,7 @@ FriendGroupDialog::FriendGroupDialog(QWidget* parent, TaQTWebSocket* pWs)
             }
             });
 
-        connect(m_httpHandler, &TAHttpHandler::failed, this, [=](const QString& errResponseString) {
+        connect(m_httpHandler, &TAHttpHandler::failed, this, [this](const QString& errResponseString) {
             //if (errLabel)
             {
                 QJsonDocument jsonDoc = QJsonDocument::fromJson(errResponseString.toUtf8());
@@ -887,7 +894,7 @@ FriendGroupDialog::FriendGroupDialog(QWidget* parent, TaQTWebSocket* pWs)
     notifyLayout->addWidget(friendNotify);
     notifyLayout->addWidget(groupNotify);
 
-    connect(friendNotify, &RowItem::clicked, this, [=] {
+    connect(friendNotify, &RowItem::clicked, this, [this] {
         qDebug("好友通知 clicked");
         QVector<QString> vstrNotice = addGroupWidget->getNoticeMsg();
         if (friendNotifyDlg)
@@ -904,7 +911,7 @@ FriendGroupDialog::FriendGroupDialog(QWidget* parent, TaQTWebSocket* pWs)
             friendNotifyDlg->hide();
         }
         });
-    connect(groupNotify, &RowItem::clicked, this, [=] {
+    connect(groupNotify, &RowItem::clicked, this, [this] {
         qDebug("群通知 clicked");
         QVector<QString> vstrNotice = addGroupWidget->getNoticeMsg();
         if (grpNotifyDlg)
@@ -972,7 +979,7 @@ FriendGroupDialog::FriendGroupDialog(QWidget* parent, TaQTWebSocket* pWs)
     //topLayout->addStretch();
     //topLayout->addWidget(closeButton);
 
-    connect(btnAdd, &QPushButton::clicked, this, [=] {
+    connect(btnAdd, &QPushButton::clicked, this, [this] {
         if (addGroupWidget)
         {
             addGroupWidget->show();
@@ -1057,12 +1064,12 @@ FriendGroupDialog::FriendGroupDialog(QWidget* parent, TaQTWebSocket* pWs)
     stack->setCurrentIndex(0);
 
     // 点击切换
-    connect(btnFriend, &QPushButton::clicked, this, [=] {
+    connect(btnFriend, &QPushButton::clicked, this, [this, btnFriend, btnGroup, stack] {
         btnFriend->setChecked(true);
         btnGroup->setChecked(false);
         stack->setCurrentIndex(0);
         });
-    connect(btnGroup, &QPushButton::clicked, this, [=] {
+    connect(btnGroup, &QPushButton::clicked, this, [this, btnFriend, btnGroup, stack] {
         btnFriend->setChecked(false);
         btnGroup->setChecked(true);
         stack->setCurrentIndex(1);
@@ -1142,6 +1149,24 @@ void FriendGroupDialog::InitData()
     }
 
     GetGroupJoinedList(); //客户端不用从腾讯服务器获取群列表了
+
+    // 班级端：登录成功后立即创建 ScheduleDialog 并调用接口获取群组信息
+    ClassLoginInfo loginInfo = CommonInfo::GetClassLoginInfo();
+    if (loginInfo.isLoggedIn() && !loginInfo.class_id.isEmpty()) {
+        // 确保 ScheduleDialog 已创建
+        ensureScheduleDialogCreated(loginInfo.class_id);
+        
+        // 调用接口获取群组信息（/groups/members）
+        if (m_httpHandler) {
+            QString groupId = loginInfo.class_id + "01";
+            QUrl url("http://47.100.126.194:5000/groups/members");
+            QUrlQuery query;
+            query.addQueryItem("group_id", groupId);
+            url.setQuery(query);
+            m_httpHandler->get(url.toString());
+            qDebug() << "登录成功后立即获取群组信息:" << url.toString();
+        }
+    }
 
     if (m_httpHandler)
     {
@@ -1653,6 +1678,11 @@ void FriendGroupDialog::InitWebSocket()
                 }
             }
         });
+
+        // 连接课前准备历史消息信号（登录后可能下发）
+        connect(m_pWs, &TaQTWebSocket::prepareClassHistoryReceived, this, [this](const QJsonObject& prepareData) {
+            processPrepareClassHistoryMessage(prepareData);
+        });
     }
 }
 
@@ -1743,6 +1773,94 @@ void FriendGroupDialog::resizeEvent(QResizeEvent* event)
     closeButton->move(this->width() - closeButton->width() - 6, 6);
 }
 
+ScheduleDialog* FriendGroupDialog::getScheduleDialog(const QString& classId) const
+{
+    // m_scheduleDlg 使用 unique_group_id (classId + "01") 作为key
+    QString groupId = classId + "01";
+    return m_scheduleDlg.value(groupId, nullptr);
+}
+
+void FriendGroupDialog::ensureScheduleDialogCreated(const QString& classId)
+{
+    if (classId.isEmpty()) {
+        return;
+    }
+    
+    // 生成班级群ID：班级ID + "01"
+    QString groupId = classId + "01";
+    
+    // 如果已经存在，直接返回
+    if (m_scheduleDlg.contains(groupId) && m_scheduleDlg[groupId]) {
+        return;
+    }
+    
+    // 直接创建ScheduleDialog，不显示（复制openScheduleForGroup中的创建逻辑，但不调用show）
+    ScheduleDialog* dlg = new ScheduleDialog(classId, this, m_pWs);
+    dlg->InitWebSocket();
+    QList<Notification> curNotification;
+    for (const auto& iter : notifications) {
+        if (iter.unique_group_id == groupId) {
+            curNotification.append(iter);
+        }
+    }
+    dlg->setNoticeMsg(curNotification);
+    if (m_prepareClassHistoryCache.contains(groupId)) {
+        dlg->setPrepareClassHistory(m_prepareClassHistoryCache.value(groupId));
+    }
+    // 传递缓存的作业数据到 ScheduleDialog
+    if (m_homeworkCache.contains(groupId)) {
+        const QMap<QString, QMap<QString, QString>>& homeworkByDate = m_homeworkCache[groupId];
+        for (auto it = homeworkByDate.begin(); it != homeworkByDate.end(); ++it) {
+            const QString& dateStr = it.key();
+            const QMap<QString, QString>& subjectContent = it.value();
+            for (auto subIt = subjectContent.begin(); subIt != subjectContent.end(); ++subIt) {
+                dlg->setHomeworkData(dateStr, subIt.key(), subIt.value());
+            }
+        }
+    }
+    // 传递缓存的通知数据到 ScheduleDialog
+    if (m_notificationCache.contains(groupId)) {
+        dlg->setNotificationData(m_notificationCache[groupId]);
+    }
+    connectGroupLeftSignal(dlg, groupId);
+    // 连接群组设置更新信号
+    connect(dlg, &ScheduleDialog::groupSettingsUpdated, this, [this]() {
+        notifyUpdatePrepareClassButton();
+    });
+    m_scheduleDlg[groupId] = dlg;
+    
+    // 初始化数据，但不显示窗口
+    dlg->InitData(QString("班级群"), groupId, classId, true, true);
+    dlg->hide(); // 确保窗口是隐藏的
+}
+
+// 通知 TACMainDialog 更新课前准备按钮状态
+void FriendGroupDialog::notifyUpdatePrepareClassButton()
+{
+    // 通过 parentWidget() 查找 TACMainDialog
+    QWidget* parentWidget = this->parentWidget();
+    qDebug() << "FriendGroupDialog::notifyUpdatePrepareClassButton() called, parentWidget:" << parentWidget;
+    while (parentWidget) {
+        QString className = parentWidget->metaObject()->className();
+        qDebug() << "Checking parent widget class:" << className;
+        // 使用类名匹配
+        if (className == QString("TACMainDialog")) {
+            qDebug() << "Found TACMainDialog, calling updatePrepareClassButtonVisibility";
+            // 使用 QMetaObject 调用方法
+            bool result = QMetaObject::invokeMethod(parentWidget, "updatePrepareClassButtonVisibility", Qt::QueuedConnection);
+            qDebug() << "QMetaObject::invokeMethod result:" << result;
+            if (!result) {
+                qWarning() << "Failed to invoke updatePrepareClassButtonVisibility method";
+            }
+            break;
+        }
+        parentWidget = parentWidget->parentWidget();
+    }
+    if (!parentWidget) {
+        qWarning() << "TACMainDialog not found in parent widget chain";
+    }
+}
+
 void FriendGroupDialog::onWebSocketMessage(const QString& msg)
 {
     // 解析 JSON 文本
@@ -1762,7 +1880,7 @@ void FriendGroupDialog::onWebSocketMessage(const QString& msg)
 
     const QString type = rootObj.value(QStringLiteral("type")).toString();
     if (type == QStringLiteral("prepare_class_history")) {
-        processPrepareClassHistoryMessage(rootObj);
+        // prepare_class_history 已通过 TaQTWebSocket::prepareClassHistoryReceived 专门信号处理
         return;
     }
 

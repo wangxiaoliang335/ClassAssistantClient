@@ -10,6 +10,7 @@
 #include <QDateTime>
 #include <QDate>
 #include <QApplication>
+#include <QTimer>
 #include <windows.h>
 #include <tchar.h>
 #include "TACMainDialog.h"
@@ -318,8 +319,122 @@ void TACMainDialog::Init(QString classId, int user_id)
         }
         else if (type == TACNavigationBarWidgetType::CLASS_GROUP)
         {
-            if (friendGrpDlg)
-                friendGrpDlg->show();
+            // 检查"关联今日课表"是否开启
+            bool linkTodayScheduleEnabled = false;
+            if (friendGrpDlg) {
+                ClassLoginInfo loginInfo = CommonInfo::GetClassLoginInfo();
+                if (!loginInfo.class_id.isEmpty()) {
+                    // 确保ScheduleDialog已创建（如果不存在则先创建，但不显示）
+                    friendGrpDlg->ensureScheduleDialogCreated(loginInfo.class_id);
+                    ScheduleDialog* scheduleDlg = friendGrpDlg->getScheduleDialog(loginInfo.class_id);
+                    if (scheduleDlg) {
+                        QGroupInfo* groupInfo = scheduleDlg->getGroupInfo();
+                        if (groupInfo) {
+                            linkTodayScheduleEnabled = groupInfo->isLinkTodayScheduleEnabled();
+                        }
+                    }
+                }
+            }
+            
+            //// 更新"课前准备"功能键的可见性：如果"关联今日课表"为true，则显示；否则隐藏
+            //if (navBarWidget) {
+            //    navBarWidget->setPrepareClassButtonVisible(linkTodayScheduleEnabled);
+            //}
+            
+            // 如果"关联今日课表"未开启，直接打开周课表（旧行为）
+            if (!linkTodayScheduleEnabled) {
+                if (!classWeekCourseScheduldDialog) {
+                    classWeekCourseScheduldDialog = new TACClassWeekCourseScheduleDialog(this);
+                }
+                
+                ClassLoginInfo loginInfo = CommonInfo::GetClassLoginInfo();
+                if (!loginInfo.class_id.isEmpty()) {
+                    classWeekCourseScheduldDialog->fetchCourseScheduleFromServer(loginInfo.class_id);
+                }
+                
+                QScreen* screen = QApplication::primaryScreen();
+                QRect screenGeometry = screen->geometry();
+                int x = (screenGeometry.width() - classWeekCourseScheduldDialog->width()) / 2;
+                int y = (screenGeometry.height() - classWeekCourseScheduldDialog->height()) / 2;
+                classWeekCourseScheduldDialog->move(x, y);
+                
+                classWeekCourseScheduldDialog->show();
+                classWeekCourseScheduldDialog->raise();
+                classWeekCourseScheduldDialog->activateWindow();
+                return;
+            }
+            
+            // "关联今日课表"已开启，显示课程表菜单（包含"课程表"和"今日课表"选项）
+            if (!courseScheduleMenuDialog) {
+                courseScheduleMenuDialog = new TACCourseScheduleMenuDialog(this);
+                
+                // 连接周课表信号
+                connect(courseScheduleMenuDialog, &TACCourseScheduleMenuDialog::weekScheduleSelected, this, [this]() {
+                    // 显示周课表
+                    if (!classWeekCourseScheduldDialog) {
+                        classWeekCourseScheduldDialog = new TACClassWeekCourseScheduleDialog(this);
+                    }
+                    
+                    ClassLoginInfo loginInfo = CommonInfo::GetClassLoginInfo();
+                    if (!loginInfo.class_id.isEmpty()) {
+                        classWeekCourseScheduldDialog->fetchCourseScheduleFromServer(loginInfo.class_id);
+                    }
+                    
+                    QScreen* screen = QApplication::primaryScreen();
+                    QRect screenGeometry = screen->geometry();
+                    int x = (screenGeometry.width() - classWeekCourseScheduldDialog->width()) / 2;
+                    int y = (screenGeometry.height() - classWeekCourseScheduldDialog->height()) / 2;
+                    classWeekCourseScheduldDialog->move(x, y);
+                    
+                    classWeekCourseScheduldDialog->show();
+                    classWeekCourseScheduldDialog->raise();
+                    classWeekCourseScheduldDialog->activateWindow();
+                });
+                
+                // 连接今日课表信号
+                connect(courseScheduleMenuDialog, &TACCourseScheduleMenuDialog::todayScheduleSelected, this, [this]() {
+                    // 显示今日课表
+                    if (!courseSchedule) {
+                        courseSchedule = new TACCourseSchedule(this);
+                    }
+                    
+                    ClassLoginInfo loginInfo = CommonInfo::GetClassLoginInfo();
+                    if (!loginInfo.class_id.isEmpty()) {
+                        courseSchedule->fetchTodaySchedule(loginInfo.class_id);
+                    }
+                    
+                    courseSchedule->show();
+                    courseSchedule->raise();
+                    courseSchedule->activateWindow();
+                });
+            }
+            
+            // 定位菜单到CLASS_GROUP按钮的下方
+            // 导航栏按钮顺序：folder(0), homework(1), class(2), schedule(3), user(4)
+            // 按钮大小：60x60，间距：20
+            QPoint navBarPos = navBarWidget->mapToGlobal(QPoint(0, 0));
+            QRect navBarRect = navBarWidget->geometry();
+            
+            // CLASS_GROUP按钮是第3个按钮（索引2）
+            // 计算按钮位置：folder(0) + homework(1) + class(2)
+            int buttonIndex = 2; // CLASS_GROUP按钮的索引
+            int buttonWidth = 60;
+            int buttonSpacing = 20;
+            int buttonX = buttonIndex * (buttonWidth + buttonSpacing);
+            
+            // 菜单显示在按钮上方，居中对齐
+            int menuX = navBarPos.x() + buttonX + (buttonWidth - courseScheduleMenuDialog->width()) / 2;
+            int menuY = navBarPos.y() - courseScheduleMenuDialog->height() - 3; // 按钮上方3像素
+            courseScheduleMenuDialog->move(menuX, menuY);
+            
+            // 切换显示/隐藏状态
+            if (courseScheduleMenuDialog->isVisible()) {
+                courseScheduleMenuDialog->hide();
+            } else {
+                courseScheduleMenuDialog->show();
+                courseScheduleMenuDialog->raise();
+                courseScheduleMenuDialog->activateWindow();
+            }
         }
         else if (type == TACNavigationBarWidgetType::USER)
         {
@@ -368,8 +483,28 @@ void TACMainDialog::Init(QString classId, int user_id)
         }
         else if (type == TACNavigationBarWidgetType::PREPARE_CLASS)
         {
-            if (prepareClassDialog)
-                prepareClassDialog->show();
+            // 查看下节课的课前准备
+            if (friendGrpDlg) {
+                ClassLoginInfo loginInfo = CommonInfo::GetClassLoginInfo();
+                if (!loginInfo.class_id.isEmpty()) {
+                    // 确保ScheduleDialog已创建
+                    friendGrpDlg->ensureScheduleDialogCreated(loginInfo.class_id);
+                    ScheduleDialog* scheduleDlg = friendGrpDlg->getScheduleDialog(loginInfo.class_id);
+                    if (scheduleDlg) {
+                        // 获取下节课的科目和时间
+                        QTime currentTime = QTime::currentTime();
+                        QPair<QString, QString> nextClass = scheduleDlg->getNextClassInfo(currentTime);
+                        if (!nextClass.first.isEmpty()) {
+                            // 显示下节课的课前准备
+                            scheduleDlg->showNextClassPrepareDialog(nextClass.first, nextClass.second);
+                        } else {
+                            // 如果没有下节课，显示提示
+                            QMessageBox::information(this, QString::fromUtf8(u8"提示"), 
+                                                   QString::fromUtf8(u8"今日暂无下一节课"));
+                        }
+                    }
+                }
+            }
         }
         else if (type == TACNavigationBarWidgetType::CALENDAR)
         {
@@ -385,6 +520,16 @@ void TACMainDialog::Init(QString classId, int user_id)
         }
     });
     navBarWidget->show();
+    
+    //// 登录成功后，延迟更新课前准备按钮状态（等待群组设置加载完成）
+    //QTimer::singleShot(2000, this, [this]() {
+    //    updatePrepareClassButtonVisibility();
+    //});
+    //
+    //// 登录成功后，延迟更新课前准备按钮状态（等待群组设置加载完成）
+    //QTimer::singleShot(2000, this, [this]() {
+    //    updatePrepareClassButtonVisibility();
+    //});
 
     prepareClassDialog = new TACPrepareClassDialog(this);
     desktopManagerWidget = new TACDesktopManagerWidget(this);
@@ -557,18 +702,6 @@ void TACMainDialog::Init(QString classId, int user_id)
     });
     folderWidget->show();
 
-    courseSchedule = new TACCourseSchedule(this);
-    courseSchedule->show();
-
-    QMap<TimeRange, QString> classMap;
-    classMap[TimeRange(QTime(8, 0), QTime(8, 45))] = "数学";
-    classMap[TimeRange(QTime(8, 45), QTime(9, 30))] = "语文";
-    classMap[TimeRange(QTime(9, 30), QTime(10, 15))] = "大课间";
-    classMap[TimeRange(QTime(10, 30), QTime(11, 30))] = "英语";
-    classMap[TimeRange(QTime(13, 0), QTime(14, 0))] = "午休";
-    classMap[TimeRange(QTime(14, 15), QTime(15, 0))] = "历史";
-
-    courseSchedule->updateClass(classMap);
     classWeekCourseScheduldDialog = new TACClassWeekCourseScheduleDialog(this);
 
     if (m_httpHandler)
@@ -698,15 +831,17 @@ void TACMainDialog::Login(std::string classId) { //登入
             ths->userMenuDlg->InitUI();
             CommonInfo::InitData(ths->m_userInfo);
 
-            if (TACMainDialog::m_ws)
-            {
-                TaQTWebSocket::InitWebSocket(TACMainDialog::m_ws);
-            }
-
             if (ths->friendGrpDlg)
             {
                 ths->friendGrpDlg->InitWebSocket();
                 ths->friendGrpDlg->InitData();
+            }
+
+            // 注意：先让各个对话框把 WebSocket 信号 connect 好，再真正打开 WebSocket 连接，
+            // 避免登录后服务端立即推送的数据在 UI 尚未 connect 前被“错过”。
+            if (TACMainDialog::m_ws)
+            {
+                TaQTWebSocket::InitWebSocket(TACMainDialog::m_ws);
             }
         }
 
@@ -802,4 +937,34 @@ void TACMainDialog::downloadAvatarFromUrl(const QString& avatarUrl, const QStrin
         }
         reply->deleteLater();
     });
+}
+
+// 更新课前准备按钮的可见性（根据群组设置）
+void TACMainDialog::updatePrepareClassButtonVisibility()
+{
+    qDebug() << "TACMainDialog::updatePrepareClassButtonVisibility() called";
+    if (!navBarWidget) {
+        qDebug() << "navBarWidget is null, returning";
+        return;
+    }
+    
+    bool linkPreClassPreparationEnabled = false;
+    if (friendGrpDlg) {
+        ClassLoginInfo loginInfo = CommonInfo::GetClassLoginInfo();
+        if (!loginInfo.class_id.isEmpty()) {
+            // 确保ScheduleDialog已创建（如果不存在则先创建，但不显示）
+            friendGrpDlg->ensureScheduleDialogCreated(loginInfo.class_id);
+            ScheduleDialog* scheduleDlg = friendGrpDlg->getScheduleDialog(loginInfo.class_id);
+            if (scheduleDlg) {
+                QGroupInfo* groupInfo = scheduleDlg->getGroupInfo();
+                if (groupInfo) {
+                    // 根据"关联课前准备"来判断是否显示课前准备功能键
+                    linkPreClassPreparationEnabled = groupInfo->isLinkPreClassPreparationEnabled();
+                }
+            }
+        }
+    }
+    
+    // 更新"课前准备"功能键的可见性：如果"关联课前准备"为true，则显示；否则隐藏
+    navBarWidget->setPrepareClassButtonVisible(linkPreClassPreparationEnabled);
 }

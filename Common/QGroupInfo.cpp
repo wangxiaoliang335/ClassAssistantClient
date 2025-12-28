@@ -11,6 +11,17 @@
 #include <QSet>
 #include <QPointer>
 #include <QMetaObject>
+#include <QNetworkAccessManager>
+#include <QNetworkRequest>
+#include <QNetworkReply>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QDir>
+#include <QFileInfo>
+#include <QCoreApplication>
+#include <QPixmap>
+#include <QPainter>
+#include <QPainterPath>
 
 namespace {
 struct GroupMemberFetchSDKData {
@@ -763,10 +774,14 @@ void QGroupInfo::initData(QString groupName, QString groupNumberId, bool iGroupO
             }
         } else {
             // 班级端：顶部头像区域（按图片样式）
-            QLabel* lblAvatar = new QLabel(this);
-            lblAvatar->setFixedSize(50, 50);
-            lblAvatar->setStyleSheet("background-color: lightgray; border-radius: 25px;");
-            // TODO: 加载真实头像（从 CommonInfo::GetClassLoginInfo().face_url）
+            m_lblAvatar = new QLabel(this);
+            m_lblAvatar->setFixedSize(50, 50);
+            m_lblAvatar->setStyleSheet("background-color: lightgray; border-radius: 25px;");
+            m_lblAvatar->setScaledContents(true); // 允许图片缩放
+            m_lblAvatar->setAlignment(Qt::AlignCenter); // 居中显示
+            
+            // 尝试加载头像图片
+            loadAvatarImage();
             
             QVBoxLayout* infoLayout = new QVBoxLayout;
             QLabel* lblName = new QLabel(groupName, this);
@@ -788,7 +803,7 @@ void QGroupInfo::initData(QString groupName, QString groupNumberId, bool iGroupO
             btnMore->setFixedSize(30, 30);
             btnMore->setStyleSheet("background: transparent; color: white; font-size: 18px;");
             
-            topLayout->addWidget(lblAvatar);
+            topLayout->addWidget(m_lblAvatar);
             topLayout->addLayout(infoLayout, 1);
             topLayout->addStretch();
             topLayout->addWidget(btnMore);
@@ -1153,14 +1168,16 @@ void QGroupInfo::initData(QString groupName, QString groupNumberId, bool iGroupO
         
         // 1. 接收通知
         switchesLayout->addLayout(createSwitchRow("接收通知", m_swReceiveNotify));
-        connect(m_swReceiveNotify, &SimpleToggleSwitch::toggled, this, [](bool on) {
+        connect(m_swReceiveNotify, &SimpleToggleSwitch::toggled, this, [this](bool on) {
             qDebug() << "接收通知:" << (on ? "开启" : "关闭");
+            updateGroupSetting("receive_notification", on ? 1 : 0);
         });
         
         // 2. 关联今日课表
         switchesLayout->addLayout(createSwitchRow("关联今日课表", m_swLinkTodaySchedule));
-        connect(m_swLinkTodaySchedule, &SimpleToggleSwitch::toggled, this, [](bool on) {
+        connect(m_swLinkTodaySchedule, &SimpleToggleSwitch::toggled, this, [this](bool on) {
             qDebug() << "关联今日课表:" << (on ? "开启" : "关闭");
+            updateGroupSetting("link_today_schedule", on ? 1 : 0);
         });
         
         // 3. 开启对讲（保留原有的 IntercomControlWidget，但用开关替代）
@@ -1170,18 +1187,21 @@ void QGroupInfo::initData(QString groupName, QString groupNumberId, bool iGroupO
             if (m_intercomWidget) {
                 m_intercomWidget->setIntercomEnabled(on);
             }
+            updateGroupSetting("enable_intercom", on ? 1 : 0);
         });
         
         // 4. 关联家庭作业
         switchesLayout->addLayout(createSwitchRow("关联家庭作业", m_swLinkHomework));
-        connect(m_swLinkHomework, &SimpleToggleSwitch::toggled, this, [](bool on) {
+        connect(m_swLinkHomework, &SimpleToggleSwitch::toggled, this, [this](bool on) {
             qDebug() << "关联家庭作业:" << (on ? "开启" : "关闭");
+            updateGroupSetting("link_homework", on ? 1 : 0);
         });
         
         // 5. 关联课前准备
         switchesLayout->addLayout(createSwitchRow("关联课前准备", m_swLinkPreClass));
-        connect(m_swLinkPreClass, &SimpleToggleSwitch::toggled, this, [](bool on) {
+        connect(m_swLinkPreClass, &SimpleToggleSwitch::toggled, this, [this](bool on) {
             qDebug() << "关联课前准备:" << (on ? "开启" : "关闭");
+            updateGroupSetting("link_pre_class_preparation", on ? 1 : 0);
         });
         
         mainLayout->addWidget(groupSwitches);
@@ -3162,5 +3182,145 @@ void QGroupInfo::mouseReleaseEvent(QMouseEvent* event)
         m_dragging = false;
     }
     QDialog::mouseReleaseEvent(event);
+}
+
+bool QGroupInfo::isLinkTodayScheduleEnabled() const
+{
+    if (m_swLinkTodaySchedule) {
+        return m_swLinkTodaySchedule->isChecked();
+    }
+    return false;
+}
+
+bool QGroupInfo::isLinkPreClassPreparationEnabled() const
+{
+    if (m_swLinkPreClass) {
+        return m_swLinkPreClass->isChecked();
+    }
+    return false;
+}
+
+void QGroupInfo::setGroupSettings(int receiveNotification, int linkTodaySchedule, int enableIntercom, 
+                                  int linkHomework, int linkPreClassPreparation)
+{
+    // 更新UI开关状态（暂时断开信号连接，避免触发保存）
+    if (m_swReceiveNotify) {
+        m_swReceiveNotify->blockSignals(true);
+        m_swReceiveNotify->setChecked(receiveNotification == 1);
+        m_swReceiveNotify->blockSignals(false);
+    }
+    if (m_swLinkTodaySchedule) {
+        m_swLinkTodaySchedule->blockSignals(true);
+        m_swLinkTodaySchedule->setChecked(linkTodaySchedule == 1);
+        m_swLinkTodaySchedule->blockSignals(false);
+    }
+    if (m_swEnableIntercom) {
+        m_swEnableIntercom->blockSignals(true);
+        m_swEnableIntercom->setChecked(enableIntercom == 1);
+        m_swEnableIntercom->blockSignals(false);
+    }
+    if (m_swLinkHomework) {
+        m_swLinkHomework->blockSignals(true);
+        m_swLinkHomework->setChecked(linkHomework == 1);
+        m_swLinkHomework->blockSignals(false);
+    }
+    if (m_swLinkPreClass) {
+        m_swLinkPreClass->blockSignals(true);
+        m_swLinkPreClass->setChecked(linkPreClassPreparation == 1);
+        m_swLinkPreClass->blockSignals(false);
+    }
+}
+
+void QGroupInfo::updateGroupSetting(const QString& settingName, int value)
+{
+    if (m_groupNumberId.isEmpty()) {
+        qWarning() << "Group ID is empty, cannot update setting";
+        return;
+    }
+    
+    if (!m_networkManager) {
+        m_networkManager = new QNetworkAccessManager(this);
+    }
+    
+    QJsonObject payload;
+    payload["group_id"] = m_groupNumberId;
+    payload[settingName] = value;
+    
+    QJsonDocument doc(payload);
+    QByteArray jsonData = doc.toJson(QJsonDocument::Compact);
+    
+    QUrl url("http://47.100.126.194:5000/groups/update-settings");
+    QNetworkRequest request(url);
+    request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+    
+    QNetworkReply* reply = m_networkManager->post(request, jsonData);
+    connect(reply, &QNetworkReply::finished, this, [reply, settingName, value]() {
+        if (reply->error() == QNetworkReply::NoError) {
+            QByteArray responseData = reply->readAll();
+            QJsonParseError parseError;
+            QJsonDocument respDoc = QJsonDocument::fromJson(responseData, &parseError);
+            if (parseError.error == QJsonParseError::NoError && respDoc.isObject()) {
+                QJsonObject obj = respDoc.object();
+                QJsonObject dataObj = obj.value("data").toObject();
+                int code = dataObj.value("code").toInt(-1);
+                if (code == 200) {
+                    qDebug() << "群组设置更新成功:" << settingName << "=" << value;
+                } else {
+                    qWarning() << "群组设置更新失败:" << settingName << dataObj.value("message").toString();
+                }
+            }
+        } else {
+            qWarning() << "群组设置更新请求失败:" << settingName << reply->errorString();
+        }
+        reply->deleteLater();
+    });
+}
+
+void QGroupInfo::loadAvatarImage()
+{
+    if (!m_lblAvatar || m_groupNumberId.isEmpty()) {
+        return;
+    }
+    
+    // 检查是否已经有下载的头像文件，如果有则显示
+    // 头像文件保存在 group_images/{groupId}/ 目录下
+    QString avatarDir = QCoreApplication::applicationDirPath() + "/group_images/" + m_groupNumberId;
+    QDir dir(avatarDir);
+    if (dir.exists()) {
+        // 查找目录下的图片文件（png, jpg, jpeg等）
+        QStringList filters;
+        filters << "*.png" << "*.jpg" << "*.jpeg" << "*.bmp";
+        QFileInfoList fileList = dir.entryInfoList(filters, QDir::Files);
+        if (!fileList.isEmpty()) {
+            // 使用第一个找到的图片文件
+            QString avatarPath = fileList.first().absoluteFilePath();
+            QPixmap pixmap(avatarPath);
+            if (!pixmap.isNull()) {
+                // 缩放图片以适应标签大小，保持宽高比并裁剪为圆形
+                pixmap = pixmap.scaled(m_lblAvatar->size(), Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+                // 创建圆形遮罩
+                QPixmap circularPixmap(m_lblAvatar->size());
+                circularPixmap.fill(Qt::transparent);
+                QPainter painter(&circularPixmap);
+                painter.setRenderHint(QPainter::Antialiasing);
+                QPainterPath path;
+                path.addEllipse(circularPixmap.rect());
+                painter.setClipPath(path);
+                painter.drawPixmap(0, 0, pixmap);
+                painter.end();
+                
+                m_lblAvatar->setPixmap(circularPixmap);
+                return;
+            }
+        }
+    }
+    
+    // 如果没有找到头像文件，显示默认文字（班级名称的第一个字符）
+    if (!m_groupName.isEmpty()) {
+        QString firstChar = m_groupName.left(1);
+        m_lblAvatar->setText(firstChar);
+        m_lblAvatar->setAlignment(Qt::AlignCenter);
+        m_lblAvatar->setStyleSheet("background-color: #4169E1; color: white; border-radius: 25px; font-size: 20px; font-weight: bold;");
+    }
 }
 

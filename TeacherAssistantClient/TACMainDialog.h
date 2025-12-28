@@ -26,6 +26,8 @@
 #include "TACDesktopManagerWidget.h"
 #include "TACPrepareClassDialog.h"
 #include "TACClassWeekCourseScheduleDialog.h"
+#include "TACCourseScheduleMenuDialog.h"
+#include "ScheduleDialog.h"
 #include "ui_TACMainDialog.h"
 #include "TACTrayWidget.h"
 #include "SchoolInfoDialog.h"
@@ -51,6 +53,11 @@ public:
 	void Init(QString classId, int user_id);
 	bool InitSDK();
 	void Login(std::string userid);
+	
+public slots:
+	// 更新课前准备按钮的可见性（根据群组设置）
+	void updatePrepareClassButtonVisibility();
+	
 protected:
 	void paintEvent(QPaintEvent* event) override;
 	void resizeEvent(QResizeEvent* event) override;
@@ -58,6 +65,8 @@ protected:
 private:
 	void updateBackground(const QString& fileName);
 	void downloadAvatarFromUrl(const QString& avatarUrl, const QString& savePath);
+
+// 更新课前准备按钮的可见性（根据群组设置）- 已移动到 public slots
 
 //private slots:
 //    void onConnected() {
@@ -137,6 +146,7 @@ private:
 	QPointer<TACDesktopManagerWidget> desktopManagerWidget;
 	QPointer<TACPrepareClassDialog> prepareClassDialog;
 	QPointer<TACClassWeekCourseScheduleDialog> classWeekCourseScheduldDialog;
+	QPointer<TACCourseScheduleMenuDialog> courseScheduleMenuDialog;
 	QPointer<TACTrayWidget> trayWidget;
 	QPointer<SchoolInfoDialog> schoolInfoDlg;
 	QPointer<ClassInfoDialog> classInfoDlg;

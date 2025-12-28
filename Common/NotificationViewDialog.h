@@ -52,8 +52,6 @@ protected:
 private slots:
     void onCloseClicked();
     void onAddClicked();
-    void onPrevClicked();  // 上一条
-    void onNextClicked();  // 下一条
     void onModeToggleClicked();  // 切换模式
 
 private:
@@ -65,9 +63,6 @@ private:
     QPushButton* m_closeButton;
     QPushButton* m_addButton;
     QPushButton* m_modeToggleButton;  // 模式切换按钮
-    QPushButton* m_prevButton;  // 上一条按钮（完整模式）
-    QPushButton* m_nextButton;  // 下一条按钮（完整模式）
-    QWidget* m_navBar;  // 底部导航栏
     
     QScrollArea* m_scrollArea;
     QWidget* m_scrollContent;

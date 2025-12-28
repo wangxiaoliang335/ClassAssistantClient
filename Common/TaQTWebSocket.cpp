@@ -62,6 +62,9 @@ void TaQTWebSocket::onMessageReceived(const QString& msg) {
             } else if (type == "notification" || type == "unread_notifications") {
                 // 是通知消息，先发出专门信号
                 emit notificationReceived(obj);
+            } else if (type == "prepare_class_history") {
+                // 是课前准备历史消息（登录后可能下发），先发出专门信号
+                emit prepareClassHistoryReceived(obj);
             }
         }
         

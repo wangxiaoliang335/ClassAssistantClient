@@ -183,6 +183,12 @@ public:
     void InitGroupMember(QString group_id, QVector<GroupMemberInfo> groupMemberInfo);
     void InitGroupMember();
     QVector<GroupMemberInfo> getGroupMemberInfo() const { return m_groupMemberInfo; } // 获取当前成员列表
+    bool isLinkTodayScheduleEnabled() const; // 获取"关联今日课表"开关状态
+    bool isLinkPreClassPreparationEnabled() const; // 获取"关联课前准备"开关状态
+    
+    // 设置群组设置字段（从服务器获取后更新UI）
+    void setGroupSettings(int receiveNotification, int linkTodaySchedule, int enableIntercom, 
+                         int linkHomework, int linkPreClassPreparation);
     
     /**
      * @brief 使用REST API获取群成员列表
@@ -231,6 +237,7 @@ protected:
     void done(int r) override; // 拦截所有关闭路径（包括 ESC / Alt+F4 / reject()）
 
     TIMRestAPI* m_restAPI = NULL;
+    QNetworkAccessManager* m_networkManager = nullptr; // 用于HTTP请求
     QString m_groupName;
     QString m_groupNumberId;
     QString m_classId;
@@ -274,8 +281,17 @@ protected:
     QPointer<SimpleToggleSwitch> m_swLinkHomework;
     QPointer<SimpleToggleSwitch> m_swLinkPreClass;
     
+    // 班级端头像标签
+    QLabel* m_lblAvatar = nullptr;
+    
     // 根据当前用户的 is_voice_enabled 更新对讲开关状态
     void updateIntercomState();
+    
+    // 更新群组设置到服务器
+    void updateGroupSetting(const QString& settingName, int value);
+    
+    // 加载头像图片
+    void loadAvatarImage();
 
     bool validateSubjectFormat(bool showMessage = true) const; // 校验任教科目列表（至少1个非空）
     QStringList collectTeachSubjects() const; // 收集当前 UI 中的任教科目（tag）

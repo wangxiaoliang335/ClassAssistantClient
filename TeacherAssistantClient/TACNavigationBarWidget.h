@@ -30,9 +30,16 @@ protected:
 
 signals:
 	void navType(TACNavigationBarWidgetType type,bool checked=false);
+
+public:
+	// 设置"课前准备"功能键的可见性
+	void setPrepareClassButtonVisible(bool visible);
+
 private:
 	void initShow();
+	void updatePrepareClassButtonVisibility(); // 根据群组设置更新按钮可见性
 
 private:
 	QString m_className;
+	QPushButton* m_prepareClassButton = nullptr; // 课前准备功能键
 };

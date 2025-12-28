@@ -59,16 +59,16 @@ TACNavigationBarWidget::TACNavigationBarWidget(QWidget *parent)
     buttonGroup->addButton(homeworkButton);
     layout->addWidget(homeworkButton);
 
-
-    //QPushButton* editButton = new QPushButton(this);
-    //editButton->setFixedSize(BUTTON_SIZE);
-    //editButton->setIcon(QIcon(":/res/img/edit.png"));
-    //editButton->setIconSize(ICON_SIZE);
-    //connect(editButton, &QPushButton::clicked, this, [=]() {
-    //    emit navType(TACNavigationBarWidgetType::PREPARE_CLASS);
-    //    });
-    //buttonGroup->addButton(editButton);
-    //layout->addWidget(editButton);
+    m_prepareClassButton = new QPushButton(this);
+    m_prepareClassButton->setFixedSize(BUTTON_SIZE);
+    m_prepareClassButton->setIcon(QIcon(":/res/img/edit.png"));
+    m_prepareClassButton->setIconSize(ICON_SIZE);
+    m_prepareClassButton->hide(); // 默认隐藏，根据群组设置显示
+    connect(m_prepareClassButton, &QPushButton::clicked, this, [=]() {
+        emit navType(TACNavigationBarWidgetType::PREPARE_CLASS);
+        });
+    buttonGroup->addButton(m_prepareClassButton);
+    layout->addWidget(m_prepareClassButton);
 
 	QPushButton* classButton = new QPushButton(this);
     classButton->setFixedSize(BUTTON_SIZE);
@@ -165,6 +165,9 @@ TACNavigationBarWidget::TACNavigationBarWidget(QWidget *parent)
     this->setBorderColor(WIDGET_BORDER_COLOR);
     this->setBorderWidth(WIDGET_BORDER_WIDTH);
     this->setRadius(45);
+    
+    // 初始化时调用一次，设置按钮的初始状态（默认隐藏，等待外部调用 setPrepareClassButtonVisible 来设置）
+    updatePrepareClassButtonVisibility();
 }
 
 TACNavigationBarWidget::~TACNavigationBarWidget()
@@ -191,4 +194,24 @@ void TACNavigationBarWidget::initShow()
     int x = rect.x() + (rect.width() - windowSize.width()) / 2;
     int y = rect.y() + rect.height() - windowSize.height() - 60;
     this->move(x, y);
+}
+
+void TACNavigationBarWidget::updatePrepareClassButtonVisibility()
+{
+    if (!m_prepareClassButton) {
+        return;
+    }
+    
+    // 检查"关联课前准备"是否开启
+    bool linkPreClassEnabled = false;
+    // 这里需要通过信号通知外部检查设置，或者通过其他方式获取
+    // 暂时先隐藏，等待外部调用 setPrepareClassButtonVisible 来设置
+    m_prepareClassButton->setVisible(linkPreClassEnabled);
+}
+
+void TACNavigationBarWidget::setPrepareClassButtonVisible(bool visible)
+{
+    if (m_prepareClassButton) {
+        m_prepareClassButton->setVisible(visible);
+    }
 }

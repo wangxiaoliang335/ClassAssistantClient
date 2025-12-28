@@ -4,6 +4,7 @@
 #include <QPixmap>
 #include <QDateTime>
 #include <QFontMetrics>
+#include <QIcon>
 
 NotificationViewDialog::NotificationViewDialog(const QString& className, QWidget* parent)
     : QDialog(parent), m_dragging(false), m_className(className), 
@@ -11,7 +12,7 @@ NotificationViewDialog::NotificationViewDialog(const QString& className, QWidget
 {
     setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
     setAttribute(Qt::WA_TranslucentBackground);
-    setFixedSize(500, 600);
+    setFixedSize(500, 600); // FullMode 默认高度
     
     // 主布局
     QVBoxLayout* mainLayout = new QVBoxLayout(this);
@@ -71,8 +72,9 @@ NotificationViewDialog::NotificationViewDialog(const QString& className, QWidget
     //titleLayout->addWidget(m_unreadCountLabel);
     
     // 模式切换按钮
-    m_modeToggleButton = new QPushButton("完整", titleBar);
-    m_modeToggleButton->setFixedSize(50, 24);
+    m_modeToggleButton = new QPushButton(titleBar);
+    m_modeToggleButton->setFixedSize(24, 24);
+    m_modeToggleButton->setIconSize(QSize(20, 20));
     m_modeToggleButton->setStyleSheet(
         "QPushButton {"
         "background-color: #3C3C3C;"
@@ -124,60 +126,6 @@ NotificationViewDialog::NotificationViewDialog(const QString& className, QWidget
     m_scrollArea->setWidget(m_scrollContent);
     containerLayout->addWidget(m_scrollArea, 1);
     
-    // 底部导航栏（完整模式显示）
-    m_navBar = new QWidget(container);
-    m_navBar->setFixedHeight(50);
-    m_navBar->setStyleSheet("background-color: #2D2D2D; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;");
-    QHBoxLayout* navLayout = new QHBoxLayout(m_navBar);
-    navLayout->setContentsMargins(20, 10, 20, 10);
-    navLayout->setSpacing(15);
-    
-    m_prevButton = new QPushButton("上一条", m_navBar);
-    m_prevButton->setFixedHeight(30);
-    m_prevButton->setStyleSheet(
-        "QPushButton {"
-        "background-color: #3C3C3C;"
-        "color: white;"
-        "font-size: 12px;"
-        "border: none;"
-        "border-radius: 4px;"
-        "}"
-        "QPushButton:hover {"
-        "background-color: #4A4A4A;"
-        "}"
-        "QPushButton:disabled {"
-        "background-color: #3C3C3C;"
-        "color: #888888;"
-        "}"
-    );
-    connect(m_prevButton, &QPushButton::clicked, this, &NotificationViewDialog::onPrevClicked);
-    navLayout->addWidget(m_prevButton);
-    
-    navLayout->addStretch();
-    
-    m_nextButton = new QPushButton("下一条", m_navBar);
-    m_nextButton->setFixedHeight(30);
-    m_nextButton->setStyleSheet(
-        "QPushButton {"
-        "background-color: #3C3C3C;"
-        "color: white;"
-        "font-size: 12px;"
-        "border: none;"
-        "border-radius: 4px;"
-        "}"
-        "QPushButton:hover {"
-        "background-color: #4A4A4A;"
-        "}"
-        "QPushButton:disabled {"
-        "background-color: #3C3C3C;"
-        "color: #888888;"
-        "}"
-    );
-    connect(m_nextButton, &QPushButton::clicked, this, &NotificationViewDialog::onNextClicked);
-    navLayout->addWidget(m_nextButton);
-    
-    containerLayout->addWidget(m_navBar);
-    
     mainLayout->addWidget(container);
     
     // 初始化为完整模式
@@ -188,18 +136,26 @@ void NotificationViewDialog::setViewMode(ViewMode mode)
 {
     m_viewMode = mode;
     
-    // 更新模式切换按钮文本
+    // 更新模式切换按钮图标：FullMode=reduce；SimpleMode=expand
     if (m_modeToggleButton) {
-        if (mode == FullMode) {
-            m_modeToggleButton->setText("完整");
-        } else {
-            m_modeToggleButton->setText("极简");
-        }
+        const QString iconPath = (mode == FullMode)
+            ? QStringLiteral(":/res/img/home_popup_ic_reduce_hover@2x.png")
+            : QStringLiteral(":/res/img/home_popup_ic_expand_hover@2x.png");
+        m_modeToggleButton->setIcon(QIcon(iconPath));
+        m_modeToggleButton->setText(QString());
     }
     
-    // 显示/隐藏导航栏（完整模式显示，极简模式隐藏）
-    if (m_navBar) {
-        m_navBar->setVisible(mode == FullMode);
+    // 极简模式下缩小窗口高度，只显示一条消息
+    if (mode == SimpleMode) {
+        setFixedSize(500, 200);
+        if (m_scrollArea) {
+            m_scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        }
+    } else {
+        setFixedSize(500, 600);
+        if (m_scrollArea) {
+            m_scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+        }
     }
     
     // 重置索引
@@ -275,20 +231,9 @@ void NotificationViewDialog::updateDisplay()
             createNotificationWidget(m_notifications.first(), m_scrollContent);
         }
     } else {
-        // 完整模式：显示所有通知（从最新到最旧），可通过上一条/下一条按钮翻页查看历史
-        // 显示所有通知
+        // 完整模式：显示所有通知（从最新到最旧）
         for (const auto& notification : m_notifications) {
             createNotificationWidget(notification, m_scrollContent);
-        }
-        
-        // 更新导航按钮状态（完整模式下显示所有通知，导航按钮可以用于滚动到特定位置）
-        // 但根据图片，完整模式应该是显示所有通知，所以导航按钮可能不需要
-        // 这里保留导航按钮，但可以设置为禁用或隐藏
-        if (m_prevButton) {
-            m_prevButton->setEnabled(false);  // 完整模式显示所有，不需要上一条
-        }
-        if (m_nextButton) {
-            m_nextButton->setEnabled(false);  // 完整模式显示所有，不需要下一条
         }
     }
     
@@ -356,22 +301,6 @@ void NotificationViewDialog::onModeToggleClicked()
         setViewMode(SimpleMode);
     } else {
         setViewMode(FullMode);
-    }
-}
-
-void NotificationViewDialog::onPrevClicked()
-{
-    if (m_currentIndex > 0) {
-        m_currentIndex--;
-        updateDisplay();
-    }
-}
-
-void NotificationViewDialog::onNextClicked()
-{
-    if (m_currentIndex < m_notifications.size() - 1) {
-        m_currentIndex++;
-        updateDisplay();
     }
 }
 

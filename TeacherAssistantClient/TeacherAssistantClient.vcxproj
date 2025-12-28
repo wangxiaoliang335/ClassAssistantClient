@@ -105,6 +105,10 @@
     <ClCompile Include="main.cpp" />
     <ClCompile Include="TACApp.cpp" />
     <ClCompile Include="TACClassWeekCourseScheduleDialog.cpp" />
+    <ClCompile Include="TACSubjectSelectDialog.cpp" />
+    <ClCompile Include="TACSubjectEditDialog.cpp" />
+    <ClCompile Include="TACWarningDialog.cpp" />
+    <ClCompile Include="TACCourseScheduleMenuDialog.cpp" />
     <ClCompile Include="schedulecelllabel.cpp" />
     <ClCompile Include="termsettingsdialog.cpp" />
     <ClCompile Include="courseeditdialog.cpp" />
@@ -137,6 +141,10 @@
     <QtMoc Include="TACTrayWidget.h" />
     <QtMoc Include="TACToolWidget.h" />
     <QtMoc Include="TACClassWeekCourseScheduleDialog.h" />
+    <QtMoc Include="TACSubjectSelectDialog.h" />
+    <QtMoc Include="TACSubjectEditDialog.h" />
+    <QtMoc Include="TACWarningDialog.h" />
+    <QtMoc Include="TACCourseScheduleMenuDialog.h" />
     <QtMoc Include="mainwindow.h" />
     <QtMoc Include="schedulecelllabel.h" />
     <QtMoc Include="termsettingsdialog.h" />

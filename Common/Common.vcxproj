@@ -177,6 +177,7 @@
     <QtMoc Include="HomeworkEditDialog.h" />
     <QtMoc Include="HomeworkViewDialog.h" />
     <QtMoc Include="NotificationViewDialog.h" />
+    <ClInclude Include="PrepareClassEditDialog.h" />
     <QtMoc Include="AvatarLabel.h" />
     <QtMoc Include="NameLabel.h" />
     <QtMoc Include="ChatDialog.h" />
@@ -232,6 +233,7 @@
     <ClCompile Include="NotificationViewDialog.cpp" />
     <ClCompile Include="HomeworkEditDialog.cpp" />
     <ClCompile Include="HomeworkViewDialog.cpp" />
+    <ClCompile Include="PrepareClassEditDialog.cpp" />
     <ClCompile Include="ModalDialog.cpp" />
     <ClCompile Include="NameLabel.cpp" />
     <ClCompile Include="PwdLoginModalDialog.cpp" />

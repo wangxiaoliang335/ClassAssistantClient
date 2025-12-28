@@ -3,6 +3,7 @@
 #include <QObject>
 #include <QWebSocket>
 #include <QTimer>
+#include <QJsonObject>
 #include <qvector.h>
 #include <qdialog.h>
 
@@ -22,6 +23,7 @@ signals:
 	void newBinaryMessage(const QByteArray& msg);
 	void homeworkReceived(const QJsonObject& homeworkData); // 家庭作业消息信号
 	void notificationReceived(const QJsonObject& notificationData); // 通知消息信号
+	void prepareClassHistoryReceived(const QJsonObject& prepareData); // 课前准备历史（登录后下发）
 
 private slots:
 	void onConnected();
