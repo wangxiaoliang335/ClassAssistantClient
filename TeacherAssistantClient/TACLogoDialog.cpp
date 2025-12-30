@@ -33,7 +33,7 @@ TACLogoDialog::TACLogoDialog(QWidget *parent)
     schoolLogoLabel->setStyleSheet("font-size: 14px; color: white;");
     
     schoolLogoContainer = new QWidget(this);
-    schoolLogoContainer->setFixedSize(140, 140);
+    schoolLogoContainer->setFixedSize(200, 200); // 从140x140增大到200x200
     schoolLogoContainer->setStyleSheet(
         "QWidget {"
         "background-color: rgba(100, 100, 100, 100);"
@@ -51,16 +51,16 @@ TACLogoDialog::TACLogoDialog(QWidget *parent)
     schoolLogoButton->setIcon(QIcon(":/res/img/text_popup_ic_add_nor.png"));
     schoolLogoButton->setIconSize(QSize(40, 40));
     schoolLogoButton->setText(QString::fromUtf8("添加学校图标"));
-    schoolLogoButton->setFixedSize(130, 130);
+    schoolLogoButton->setFixedSize(190, 190); // 从130x130增大到190x190
     schoolLogoButton->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
-    schoolLogoButton->move(5, 5); // 居中位置 (140-130)/2 = 5
+    schoolLogoButton->move(5, 5); // 居中位置 (200-190)/2 = 5
     connect(schoolLogoButton, &QToolButton::clicked, this, &TACLogoDialog::onSchoolLogoButtonClicked);
     
     // 删除按钮（初始隐藏，当有logo时显示，定位在右上角）
     schoolLogoRemoveButton = new QToolButton(schoolLogoContainer);
     schoolLogoRemoveButton->setText("×");
     schoolLogoRemoveButton->setFixedSize(20, 20);
-    schoolLogoRemoveButton->move(115, 5); // 右上角位置 (140-20-5) = 115
+    schoolLogoRemoveButton->move(175, 5); // 右上角位置 (200-20-5) = 175
     schoolLogoRemoveButton->setStyleSheet(
         "QToolButton {"
         "background-color: rgba(200, 0, 0, 200);"
@@ -151,8 +151,9 @@ void TACLogoDialog::updateSchoolLogoDisplay()
         // 显示logo图片
         QPixmap pixmap(logoFileName);
         if (!pixmap.isNull()) {
-            QPixmap scaled = pixmap.scaled(120, 120, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+            QPixmap scaled = pixmap.scaled(180, 180, Qt::KeepAspectRatio, Qt::SmoothTransformation); // 从120x120增大到180x180
             schoolLogoButton->setIcon(QIcon(scaled));
+            schoolLogoButton->setIconSize(QSize(180, 180)); // 设置图标大小为180x180
             schoolLogoButton->setText("");
             schoolLogoRemoveButton->show();
         }
