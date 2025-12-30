@@ -109,17 +109,17 @@ void TACFileManagerWidget::setupUI()
     m_newFolderButton->setAutoFillBackground(false); // 确保背景透明
     m_newFolderButton->setStyleSheet(
         "QPushButton {"
-        "background-color: rgba(80, 80, 80, 150);"
+        "background-color: transparent;"
         "color: white;"
         "border: none;"
         "border-radius: 5px;"
         "font-size: 14px;"
         "}"
         "QPushButton:hover {"
-        "background-color: rgba(100, 100, 100, 180);"
+        "background-color: rgba(100, 100, 100, 100);"
         "}"
         "QPushButton:pressed {"
-        "background-color: rgba(60, 60, 60, 200);"
+        "background-color: rgba(80, 80, 80, 100);"
         "}"
     );
     connect(m_newFolderButton, &QPushButton::clicked, this, &TACFileManagerWidget::onCreateFolder);
@@ -131,17 +131,17 @@ void TACFileManagerWidget::setupUI()
     m_myFolderButton->setAutoFillBackground(false); // 确保背景透明
     m_myFolderButton->setStyleSheet(
         "QPushButton {"
-        "background-color: rgba(80, 80, 80, 150);"
+        "background-color: transparent;"
         "color: white;"
         "border: none;"
         "border-radius: 5px;"
         "font-size: 14px;"
         "}"
         "QPushButton:hover {"
-        "background-color: rgba(100, 100, 100, 180);"
+        "background-color: rgba(100, 100, 100, 100);"
         "}"
         "QPushButton:pressed {"
-        "background-color: rgba(60, 60, 60, 200);"
+        "background-color: rgba(80, 80, 80, 100);"
         "}"
     );
     connect(m_myFolderButton, &QPushButton::clicked, this, &TACFileManagerWidget::onMyFolderButtonClicked);

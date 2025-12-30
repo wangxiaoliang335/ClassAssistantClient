@@ -1210,6 +1210,15 @@ void QGroupInfo::initData(QString groupName, QString groupNumberId, bool iGroupO
             emit groupSettingChanged();
         });
         
+        // 6. 关联值日表
+        switchesLayout->addLayout(createSwitchRow("关联值日表", m_swLinkDutyRoster));
+        connect(m_swLinkDutyRoster, &SimpleToggleSwitch::toggled, this, [this](bool on) {
+            qDebug() << "关联值日表:" << (on ? "开启" : "关闭");
+            updateGroupSetting("link_duty_roster", on ? 1 : 0);
+            // 发出信号通知父窗口更新功能键栏
+            emit groupSettingChanged();
+        });
+        
         mainLayout->addWidget(groupSwitches);
         
         // 保留原有的 IntercomControlWidget（隐藏，仅用于内部逻辑）
@@ -3214,8 +3223,16 @@ bool QGroupInfo::isLinkHomeworkEnabled() const
     return false;
 }
 
+bool QGroupInfo::isLinkDutyRosterEnabled() const
+{
+    if (m_swLinkDutyRoster) {
+        return m_swLinkDutyRoster->isChecked();
+    }
+    return false;
+}
+
 void QGroupInfo::setGroupSettings(int receiveNotification, int linkTodaySchedule, int enableIntercom, 
-                                  int linkHomework, int linkPreClassPreparation)
+                                  int linkHomework, int linkPreClassPreparation, int linkDutyRoster)
 {
     // 更新UI开关状态（暂时断开信号连接，避免触发保存）
     if (m_swReceiveNotify) {
@@ -3242,6 +3259,11 @@ void QGroupInfo::setGroupSettings(int receiveNotification, int linkTodaySchedule
         m_swLinkPreClass->blockSignals(true);
         m_swLinkPreClass->setChecked(linkPreClassPreparation == 1);
         m_swLinkPreClass->blockSignals(false);
+    }
+    if (m_swLinkDutyRoster) {
+        m_swLinkDutyRoster->blockSignals(true);
+        m_swLinkDutyRoster->setChecked(linkDutyRoster == 1);
+        m_swLinkDutyRoster->blockSignals(false);
     }
 }
 

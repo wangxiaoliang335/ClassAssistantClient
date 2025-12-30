@@ -8,6 +8,7 @@
 #include "TACTeacherCourseScheduleWindow.h"
 #include "SchoolCourseScheduleDialog.h"
 #include "CommonInfo.h"
+#include "TACImageDialog.h"
 TACDesktopManagerWidget::TACDesktopManagerWidget(QWidget *parent)
 	: TAFloatingWidget(parent)
 {
@@ -98,6 +99,14 @@ TACDesktopManagerWidget::TACDesktopManagerWidget(QWidget *parent)
 
 	QPushButton* imageButton = new QPushButton("图片对话框", this);
 	layout->addWidget(imageButton);
+	connect(imageButton, &QPushButton::clicked, this, [this]() {
+		//TACImageDialog* imageDialog = new TACImageDialog(this->parentWidget());
+		//const QPoint anchor = this->mapToGlobal(QPoint(this->width() + 10, 0));
+		//imageDialog->move(anchor);
+		//imageDialog->show();
+		//imageDialog->raise();
+		//imageDialog->activateWindow();
+	});
 
 	QPushButton* schoolCalendarButton = new QPushButton(QString::fromUtf8(u8"校历"), this);
 	layout->addWidget(schoolCalendarButton);

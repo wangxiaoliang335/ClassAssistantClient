@@ -9,8 +9,8 @@
 TADialog::TADialog(QWidget *parent)
 	: TABaseDialog(parent),
     buttonWidget(new QWidget(this)),
-    cancelButton(new QPushButton("取消", this)),
-    enterButton(new QPushButton("确定", this)),
+    cancelButton(new QPushButton(QString::fromUtf8("鍙栨秷"), this)),
+    enterButton(new QPushButton(QString::fromUtf8("纭畾"), this)),
     buttonLayout(new QHBoxLayout(buttonWidget))
 {
     this->titleLabel->setAlignment(Qt::AlignCenter);

@@ -14,6 +14,7 @@ public:
 	TACLogoWidget(QWidget *parent);
 	~TACLogoWidget();
 	void updateLogo(const QString& fileName);
+	QString getLogoFileName() const; // 获取当前logo文件名
 protected:
 	void paintEvent(QPaintEvent* event) override;
 	void initShow() override;
@@ -49,6 +50,7 @@ public:
 	TACClassLabelWidget(QWidget* parent);
 	~TACClassLabelWidget();
 	void setContent(const QString& text);
+	QString getContent() const; // 获取当前班级名称
 protected:
 	void initShow() override;
 	void mouseDoubleClickEvent(QMouseEvent* event) override;

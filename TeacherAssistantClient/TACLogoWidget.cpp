@@ -46,6 +46,11 @@ void TACLogoWidget::updateLogo(const QString & fileName)
     m_fileName = fileName;
     update();
 }
+
+QString TACLogoWidget::getLogoFileName() const
+{
+    return m_fileName;
+}
 void TACLogoWidget::mouseDoubleClickEvent(QMouseEvent* event)
 {
     if (event->button() == Qt::LeftButton) {
@@ -120,6 +125,11 @@ void TACClassLabelWidget::setContent(const QString& text)
 {
     label->setText(text);
 }
+
+QString TACClassLabelWidget::getContent() const
+{
+    return label->text();
+}
 void TACClassLabelWidget::mouseDoubleClickEvent(QMouseEvent* event)
 {
     if (event->button() == Qt::LeftButton) {
@@ -131,7 +141,9 @@ void TACClassLabelWidget::initShow()
     QRect rect = this->getScreenGeometryWithTaskbar();
     if (rect.isEmpty())
         return;
-    int x = 360;
+    // 学校logo: x=50, width=140, right=190
+    // 缩小间隔，从170改为50
+    int x = 240; // 190 + 50 = 240
     int y = 55;
     this->move(x, y);
 }
@@ -146,11 +158,12 @@ TACTrayLabelWidget::TACTrayLabelWidget(QWidget* parent) : TAFloatingWidget(paren
     //layout->addWidget(label);
     this->setLayout(layout);
 
-    this->setBackgroundColor(WIDGET_BACKGROUND_COLOR);
+    // 背景透明，和学校logo风格一样（不设置背景色）
+    // this->setBackgroundColor(WIDGET_BACKGROUND_COLOR); // 移除，让背景透明
     this->setBorderColor(WIDGET_BORDER_COLOR);
     this->setBorderWidth(WIDGET_BORDER_WIDTH);
     this->setRadius(15);
-    this->resize(50, 50);
+    this->resize(140, 70); // 荣誉图标大小和学校logo一样，学校logo是140x70
 
     setWindowFlags(windowFlags() | Qt::WindowStaysOnTopHint);
     //setWindowFlags(
@@ -210,10 +223,12 @@ void TACTrayLabelWidget::updateLogo(const QString& fileName)
 
 void TACTrayLabelWidget::initShow()
 {
+    // 根据屏幕分辨率，将位置设置到屏幕右下角
     QRect rect = this->getScreenGeometryWithTaskbar();
     if (rect.isEmpty())
         return;
-    int x = 1700;
-    int y = 980;
+    // 计算右下角位置：屏幕宽度 - widget宽度，屏幕高度 - widget高度
+    int x = rect.right() - this->width();
+    int y = rect.bottom() - 1.5 * this->height();
     this->move(x, y);
 }

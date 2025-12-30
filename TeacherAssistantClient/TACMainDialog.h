@@ -15,6 +15,7 @@
 #include "TACDateTimeWidget.h"
 #include "TACLogoWidget.h"
 #include "TACLogoDialog.h"
+#include "TACHonorIconWidget.h"
 #include "TACFolderWidget.h"
 #include "TACCourseSchedule.h"
 #include "TACFolderDialog.h"
@@ -23,6 +24,7 @@
 #include "TACHomeworkDialog.h"
 #include "TACIMDialog.h"
 #include "../Common/HomeworkViewDialog.h"
+#include "../Common/DutyRosterDialog.h"
 
 // 前向声明作业项结构（与HomeworkViewDialog.h中的定义一致）
 struct HomeworkItem;
@@ -64,6 +66,7 @@ public slots:
 	void updateHomeworkButtonVisibility();
 	// 更新今日课表按钮的可见性（根据群组设置）
 	void updateTodayScheduleButtonVisibility();
+	void updateDutyRosterButtonVisibility(); // 更新值日表按钮的可见性（根据群组设置）
 	// 显示壁纸对话框
 	void showWallpaperDialog();
 	
@@ -140,6 +143,7 @@ private:
 	QPointer<TACSchoolLabelWidget> schoolLabelWidget;
 	QPointer<TACClassLabelWidget> classLabelWidget;
 	QPointer<TACTrayLabelWidget>  trayLabelWidget;
+	QList<QPointer<TACHonorIconWidget>> honorIconWidgets; // 荣誉图标列表（最多3个）
 
 	QPointer<TACFolderWidget> folderWidget;
 	QPointer<TACCourseSchedule> courseSchedule;
@@ -161,6 +165,7 @@ private:
 	QPointer<TACClassWeekCourseScheduleDialog> classWeekCourseScheduldDialog;
 	QPointer<TACCourseScheduleMenuDialog> courseScheduleMenuDialog;
 	QPointer<TACTrayWidget> trayWidget;
+	QPointer<DutyRosterDialog> dutyRosterDialog;
 	QPointer<SchoolInfoDialog> schoolInfoDlg;
 	QPointer<ClassInfoDialog> classInfoDlg;
 	TAHttpHandler* m_httpHandler = NULL;

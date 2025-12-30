@@ -33,6 +33,7 @@ public:
 
 signals:
     void selectionChanged();
+    void dateDoubleClicked(const QDate& date); // 双击日期信号
 protected:
     void paintEvent(QPaintEvent* event) override;
     void enterEvent(QEvent* event) override;
@@ -41,6 +42,7 @@ protected:
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
+    bool eventFilter(QObject* obj, QEvent* event) override;
 private slots:
     void onYearChanged(int year);
     void onMonthChanged(int month);

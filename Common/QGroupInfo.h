@@ -186,10 +186,11 @@ public:
     bool isLinkTodayScheduleEnabled() const; // 获取"关联今日课表"开关状态
     bool isLinkPreClassPreparationEnabled() const; // 获取"关联课前准备"开关状态
     bool isLinkHomeworkEnabled() const; // 获取"关联家庭作业"开关状态
+    bool isLinkDutyRosterEnabled() const; // 获取"关联值日表"开关状态
     
     // 设置群组设置字段（从服务器获取后更新UI）
     void setGroupSettings(int receiveNotification, int linkTodaySchedule, int enableIntercom, 
-                         int linkHomework, int linkPreClassPreparation);
+                         int linkHomework, int linkPreClassPreparation, int linkDutyRoster = 0);
     
     /**
      * @brief 使用REST API获取群成员列表
@@ -282,6 +283,7 @@ protected:
     QPointer<SimpleToggleSwitch> m_swEnableIntercom;
     QPointer<SimpleToggleSwitch> m_swLinkHomework;
     QPointer<SimpleToggleSwitch> m_swLinkPreClass;
+    QPointer<SimpleToggleSwitch> m_swLinkDutyRoster;
     
     // 班级端头像标签
     QLabel* m_lblAvatar = nullptr;

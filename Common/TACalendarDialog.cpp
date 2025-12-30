@@ -612,8 +612,11 @@ void TACalendarWidget::updateCalendar()
         }
         btn->setStyleSheet(style);
         connect(btn, &QPushButton::clicked, this, [this, dateObj]() {
-            //selectDate(dateObj);
+            setSelectedDate(dateObj);
             });
+        // 为按钮安装事件过滤器以处理双击事件
+        btn->installEventFilter(this);
+        btn->setProperty("date", QVariant::fromValue(dateObj));
 
         m_calendarLayout->addWidget(btn, currentRow, currentCol);
         m_dateButtons.append(btn);
@@ -712,6 +715,26 @@ void TACalendarWidget::setBorderColor(const QColor& color)
         update();
     }
 }
+bool TACalendarWidget::eventFilter(QObject* obj, QEvent* event)
+{
+    // 处理日期按钮的双击事件
+    if (event->type() == QEvent::MouseButtonDblClick) {
+        QPushButton* btn = qobject_cast<QPushButton*>(obj);
+        if (btn && m_dateButtons.contains(btn)) {
+            QVariant dateVariant = btn->property("date");
+            if (dateVariant.isValid()) {
+                QDate date = dateVariant.value<QDate>();
+                if (date.isValid()) {
+                    setSelectedDate(date);
+                    emit dateDoubleClicked(date);
+                    return true;
+                }
+            }
+        }
+    }
+    return QWidget::eventFilter(obj, event);
+}
+
 void TACalendarWidget::setBackgroundColor(const QColor& color)
 {
     if (m_backgroundColor != color)

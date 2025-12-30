@@ -2103,9 +2103,10 @@ public:
 									int enableIntercom = groupInfoObj.value("enable_intercom").toInt(0);
 									int linkHomework = groupInfoObj.value("link_homework").toInt(0);
 									int linkPreClassPreparation = groupInfoObj.value("link_pre_class_preparation").toInt(0);
+									int linkDutyRoster = groupInfoObj.value("link_duty_roster").toInt(0);
 									
 									m_groupInfo->setGroupSettings(receiveNotification, linkTodaySchedule, enableIntercom,
-																  linkHomework, linkPreClassPreparation);
+																  linkHomework, linkPreClassPreparation, linkDutyRoster);
 									
 									// 发出信号通知父窗口群组设置已更新
 									emit groupSettingsUpdated();

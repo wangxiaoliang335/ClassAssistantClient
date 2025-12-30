@@ -518,6 +518,36 @@ void TACMainDialog::Init(QString classId, int user_id)
                 }
             }
         }
+        else if (type == TACNavigationBarWidgetType::CLASS_SCHEDULE)
+        {
+            // 如果"关联值日表"开启，显示值日表
+            // 显示值日表窗口
+            if (!dutyRosterDialog) {
+                dutyRosterDialog = new DutyRosterDialog(this);
+            }
+            
+            // 获取群组ID和班级ID
+            if (friendGrpDlg) {
+                ClassLoginInfo loginInfo = CommonInfo::GetClassLoginInfo();
+                if (!loginInfo.class_id.isEmpty()) {
+                    // 群组ID通常是 class_id + "01"
+                    QString groupId = loginInfo.class_id + "01";
+                    dutyRosterDialog->setGroupId(groupId);
+                    dutyRosterDialog->setClassId(loginInfo.class_id);
+                }
+            }
+            
+            // 居中显示
+            QScreen* screen = QApplication::primaryScreen();
+            QRect screenGeometry = screen->geometry();
+            int x = (screenGeometry.width() - dutyRosterDialog->width()) / 2;
+            int y = (screenGeometry.height() - dutyRosterDialog->height()) / 2;
+            dutyRosterDialog->move(x, y);
+            
+            dutyRosterDialog->show();
+            dutyRosterDialog->raise();
+            dutyRosterDialog->activateWindow();
+        }
         else if (type == TACNavigationBarWidgetType::CALENDAR)
         {
             if (classWeekCourseScheduldDialog)
@@ -552,6 +582,8 @@ void TACMainDialog::Init(QString classId, int user_id)
     classInfoDlg->setBorderWidth(WIDGET_BORDER_WIDTH);
     classInfoDlg->setRadius(30);
     trayWidget = new TACTrayWidget(this);
+
+    //trayWidget->show();
     
     // 用户信息已加载后，更新管理员按钮状态
     if (CommonInfo::GetData().strIsAdministrator.isEmpty() == false) {
@@ -641,41 +673,110 @@ void TACMainDialog::Init(QString classId, int user_id)
 
     countDownDialog = new TACCountDownDialog(this);
     countDownWidget = new TACCountDownWidget(this);
+    
+    // 双击极简模式切换到完整模式
     connect(countDownWidget, &TACCountDownWidget::doubleClicked, this, [=]() {
-        countDownDialog->show();
-        });
+        if (countDownDialog && countDownWidget) {
+            countDownWidget->hide();
+            countDownDialog->show();
+            countDownDialog->raise();
+            countDownDialog->activateWindow();
+            
+            // 居中显示完整模式对话框
+            QScreen* screen = QApplication::primaryScreen();
+            QRect screenGeometry = screen->geometry();
+            int x = (screenGeometry.width() - countDownDialog->width()) / 2;
+            int y = (screenGeometry.height() - countDownDialog->height()) / 2;
+            countDownDialog->move(x, y);
+        }
+    });
+    
+    // 点击完整模式的"极简"按钮切换到极简模式
+    connect(countDownDialog, &TACCountDownDialog::switchToMinimalMode, this, [=]() {
+        if (countDownWidget && countDownDialog) {
+            countDownDialog->hide();
+            // 更新极简模式的内容
+            countDownWidget->setContent(countDownDialog->content());
+            countDownWidget->show();
+            countDownWidget->raise();
+            countDownWidget->activateWindow();
+        }
+    });
+    
+    // 初始化：显示极简模式
     countDownWidget->setContent(countDownDialog->content());
     countDownWidget->show();
-
-    datetimeDialog = new TACDateTimeDialog(this);
-    connect(datetimeDialog, &TACDateTimeDialog::updateType, this, [=](int type) {
-        datetimeWidget->setType(type);
-    });
 
     datetimeWidget = new TACDateTimeWidget(this);
     datetimeWidget->show();
 
+    datetimeDialog = new TACDateTimeDialog(this);
+    datetimeDialog->hide(); // 初始隐藏，默认显示极简模式
+    connect(datetimeDialog, &TACDateTimeDialog::updateType, this, [=](int type) {
+        datetimeWidget->setType(type);
+    });
+    
+    // 连接极简模式双击事件 - 切换到完整模式
+    connect(datetimeWidget, &TACDateTimeWidget::doubleClicked, this, [=]() {
+        datetimeWidget->hide();
+        
+        // 将完整模式窗口居中显示
+        QRect screenRect = datetimeWidget->getScreenGeometryWithTaskbar();
+        if (!screenRect.isEmpty()) {
+            QSize dialogSize = datetimeDialog->size();
+            int x = screenRect.x() + (screenRect.width() - dialogSize.width()) / 2;
+            int y = screenRect.y() + (screenRect.height() - dialogSize.height()) / 2;
+            datetimeDialog->move(x, y);
+        }
+        
+        datetimeDialog->show();
+    });
+    
+    // 连接完整模式极简按钮 - 切换回极简模式
+    connect(datetimeDialog, &TACDateTimeDialog::switchToMinimalMode, this, [=]() {
+        datetimeDialog->hide();
+        // 重置极简模式窗口到默认位置
+        datetimeWidget->resetToDefaultPosition();
+        datetimeWidget->show();
+    });
+
     logoWidget = new TACLogoWidget(this);
     logoWidget->updateLogo(".\\res\\img\\qinghua.png");
-    logoWidget->show();
 
-    schoolLabelWidget = new TACSchoolLabelWidget(this);
-    connect(schoolLabelWidget, &TACSchoolLabelWidget::doubleClicked, this, [=]() {
+    connect(logoWidget, &TACLogoWidget::doubleClicked, this, [=]() {
+        // 如果logoWidget已经设置了图标，则在打开对话框时显示
+        QString currentLogo = logoWidget->getLogoFileName();
+        if (!currentLogo.isEmpty()) {
+            logoDialog->setLogoFileName(currentLogo);
+        }
         logoDialog->show();
     });
-    schoolLabelWidget->show();
+
+    logoWidget->show();
+
+    // 隐藏学校名称按钮
+    schoolLabelWidget = new TACSchoolLabelWidget(this);
+    schoolLabelWidget->hide(); // 隐藏学校名称按钮
 
     classLabelWidget = new TACClassLabelWidget(this);
     connect(classLabelWidget, &TACClassLabelWidget::doubleClicked, this, [=]() {
+        // 如果classLabelWidget已经设置了班级名称，则在打开对话框时显示
+        QString currentClassName = classLabelWidget->getContent();
+        if (!currentClassName.isEmpty()) {
+            logoDialog->setClassName(currentClassName);
+        }
         logoDialog->show();
     });
     classLabelWidget->show();
 
+    // 初始化荣誉图标widgets列表（最多3个，初始为空）
+    honorIconWidgets.clear();
+    
+    // 保留原来的trayLabelWidget用于系统托盘功能（隐藏，不使用）
     trayLabelWidget = new TACTrayLabelWidget(this);
     trayLabelWidget->updateLogo(".\\res\\img\\com_bottom_ic_component@2x.png");
-    //connect(trayLabelWidget, &TACTrayLabelWidget::doubleClicked, this, [=]() {
-    //    logoDialog->show();
-    //    });
+    //trayLabelWidget->hide();
+
     trayLabelWidget->show();
 
     connect(trayLabelWidget, &TACTrayLabelWidget::clicked, this, [=]() {
@@ -689,22 +790,75 @@ void TACMainDialog::Init(QString classId, int user_id)
             else
                 trayWidget->hide();
         }
-        });
+    });
 
     logoDialog = new TACLogoDialog(this);
     connect(logoDialog, &TACLogoDialog::enterClicked, this, [=]() {
-        if (schoolLabelWidget && !logoDialog->getSchoolName().isEmpty())
+        // 更新学校logo
+        if (logoWidget && !logoDialog->getLogoFileName().isEmpty())
         {
-            schoolLabelWidget->setContent(logoDialog->getSchoolName());
+            logoWidget->updateLogo(logoDialog->getLogoFileName());
         }
+        
+        // 更新班级名称
         if (classLabelWidget && !logoDialog->getClassName().isEmpty())
         {
             classLabelWidget->setContent(logoDialog->getClassName());
         }
-        if (trayLabelWidget && !logoDialog->getClassName().isEmpty())
-        {
-            trayLabelWidget->setContent(logoDialog->getClassName());
+        
+        // 更新荣誉图标（最多3个）
+        QStringList honorIcons = logoDialog->getHonorIconFileNames();
+        
+        // 删除多余的widgets（如果荣誉图标数量减少了）
+        while (honorIconWidgets.size() > honorIcons.size()) {
+            TACHonorIconWidget* widget = honorIconWidgets.takeLast();
+            if (widget) {
+                widget->deleteLater();
+            }
         }
+        
+        // 更新或创建荣誉图标widgets
+        // 计算间隔：学校logo到班级名称的间隔已缩小为50
+        // 班级名称到荣誉图标的间隔也缩小
+        const int spacingBetweenLogoAndClass = 50; // 学校logo到班级名称的间隔（已缩小）
+        const int spacingBetweenClassAndHonor = 50; // 班级名称到荣誉图标的间隔（缩小）
+        const int honorIconSpacing = 5; // 荣誉图标之间的间隔（再缩小，从10改为5）
+        const int honorIconWidth = 140; // 荣誉图标宽度（和学校logo一样，140x70）
+        const int honorIconHeight = 70; // 荣誉图标高度（和学校logo一样，140x70）
+        
+        for (int i = 0; i < honorIcons.size() && i < 3; ++i) {
+            TACHonorIconWidget* widget = nullptr;
+            if (i < honorIconWidgets.size() && honorIconWidgets[i]) {
+                widget = honorIconWidgets[i];
+            } else {
+                widget = new TACHonorIconWidget(this);
+                honorIconWidgets.append(widget);
+                widget->show();
+            }
+            
+            // 设置位置：放在班级名称右边，间隔缩小
+            // 班级名称到第一个荣誉图标: spacingBetweenClassAndHonor(50)
+            // 荣誉图标之间的间隔: honorIconSpacing(5)
+            if (classLabelWidget) {
+                QRect classRect = classLabelWidget->geometry();
+                // 班级名称右边 + 间隔 + 前面所有荣誉图标的(宽度+荣誉图标间隔)
+                int x = classRect.right() + spacingBetweenClassAndHonor + i * (honorIconWidth + honorIconSpacing);
+                int y = classRect.y(); // 与班级名称同一行
+                widget->move(x, y);
+            } else if (logoWidget) {
+                // 如果班级名称不存在，使用学校logo作为参考（这种情况不应该发生）
+                QRect logoRect = logoWidget->geometry();
+                int x = logoRect.right() + spacingBetweenClassAndHonor + i * (honorIconWidth + honorIconSpacing);
+                int y = logoRect.y();
+                widget->move(x, y);
+            }
+            
+            // 更新图标
+            widget->updateLogo(honorIcons[i]);
+        }
+        
+        // 点击确定按钮后隐藏窗口
+        logoDialog->hide();
     });
    
     folderDialog = new TACFolderDialog(this);
@@ -1024,13 +1178,21 @@ void TACMainDialog::updateHomeworkButtonVisibility()
 // 更新今日课表按钮的可见性（根据群组设置）
 void TACMainDialog::updateTodayScheduleButtonVisibility()
 {
-    qDebug() << "TACMainDialog::updateTodayScheduleButtonVisibility() called";
+    // 这个方法现在用于更新值日表按钮的可见性（根据"关联值日表"toggle）
+    // 直接调用 updateDutyRosterButtonVisibility 方法
+    updateDutyRosterButtonVisibility();
+}
+
+// 更新值日表按钮的可见性（根据群组设置）
+void TACMainDialog::updateDutyRosterButtonVisibility()
+{
+    qDebug() << "TACMainDialog::updateDutyRosterButtonVisibility() called";
     if (!navBarWidget) {
         qDebug() << "navBarWidget is null, returning";
         return;
     }
     
-    bool linkTodayScheduleEnabled = false;
+    bool linkDutyRosterEnabled = false;
     if (friendGrpDlg) {
         ClassLoginInfo loginInfo = CommonInfo::GetClassLoginInfo();
         if (!loginInfo.class_id.isEmpty()) {
@@ -1040,9 +1202,9 @@ void TACMainDialog::updateTodayScheduleButtonVisibility()
             if (scheduleDlg) {
                 QGroupInfo* groupInfo = scheduleDlg->getGroupInfo();
                 if (groupInfo) {
-                    // 根据"关联今日课表"来判断是否显示今日课表功能键
-                    linkTodayScheduleEnabled = groupInfo->isLinkTodayScheduleEnabled();
-                    qDebug() << "Group ID:" << loginInfo.class_id << ", link_today_schedule enabled:" << linkTodayScheduleEnabled;
+                    // 根据"关联值日表"来判断是否显示值日表功能键
+                    linkDutyRosterEnabled = groupInfo->isLinkDutyRosterEnabled();
+                    qDebug() << "Group ID:" << loginInfo.class_id << ", link_duty_roster enabled:" << linkDutyRosterEnabled;
                 } else {
                     qDebug() << "QGroupInfo is null for group ID:" << loginInfo.class_id;
                 }
@@ -1056,9 +1218,9 @@ void TACMainDialog::updateTodayScheduleButtonVisibility()
         qDebug() << "FriendGroupDialog is null.";
     }
     
-    // 更新"今日课表"功能键的可见性：如果"关联今日课表"为true，则显示；否则隐藏
-    navBarWidget->setTodayScheduleButtonVisible(linkTodayScheduleEnabled);
-    qDebug() << "Set today schedule button visibility to:" << linkTodayScheduleEnabled;
+    // 更新"值日表"功能键的可见性：如果"关联值日表"为true，则显示；否则隐藏
+    navBarWidget->setTodayScheduleButtonVisible(linkDutyRosterEnabled);
+    qDebug() << "Set duty roster button visibility to:" << linkDutyRosterEnabled;
 }
 
 // 显示壁纸对话框
