@@ -38,6 +38,8 @@ public:
 	void setHomeworkButtonVisible(bool visible);
 	// 设置"今日课表"功能键的可见性
 	void setTodayScheduleButtonVisible(bool visible);
+	// 设置"值日表"功能键的可见性
+	void setDutyRosterButtonVisible(bool visible);
 
 private:
 	void initShow();
@@ -48,4 +50,5 @@ private:
 	QPushButton* m_prepareClassButton = nullptr; // 课前准备功能键
 	QPushButton* m_homeworkButton = nullptr; // 家庭作业功能键
 	QPushButton* m_todayScheduleButton = nullptr; // 今日课表功能键
+	QPushButton* m_dutyRosterButton = nullptr; // 值日表功能键
 };

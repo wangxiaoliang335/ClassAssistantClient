@@ -259,9 +259,6 @@
     <ClCompile Include="common\TaskQueue.cpp">
       <Filter>common</Filter>
     </ClCompile>
-    <ClCompile Include="WebRTCAudioSender.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="RtmpMediaStreamer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -326,6 +323,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="ClassInfoDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="DutyRosterDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -480,9 +480,6 @@
     <QtMoc Include="NotificationViewDialog.h">
       <Filter>Header Files</Filter>
     </QtMoc>
-    <QtMoc Include="WebRTCAudioSender.h">
-      <Filter>Header Files</Filter>
-    </QtMoc>
     <QtMoc Include="RtmpMediaStreamer.h">
       <Filter>Header Files</Filter>
     </QtMoc>
@@ -502,6 +499,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="ClassInfoDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="DutyRosterDialog.h">
       <Filter>Header Files</Filter>
     </QtMoc>
   </ItemGroup>

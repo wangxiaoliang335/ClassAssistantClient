@@ -74,6 +74,7 @@ private:
     void saveDutyRosterToServer();
     bool isRequirementRow(int row);
     int getTodayColumn();  // 获取今天对应的列索引（0=周一，4=周五）
+    QString getTaskNameForRow(int dataRow);  // 获取指定行的任务名称（考虑延续行逻辑）
 
 private:
     QPushButton* m_closeButton = nullptr;
@@ -81,8 +82,10 @@ private:
     QPushButton* m_minimalistButton = nullptr;
     QTableWidget* m_tableWidget = nullptr;
     
+    QWidget* m_containerWidget = nullptr;  // 外层容器用于圆角效果
     QVBoxLayout* m_mainLayout = nullptr;
     QHBoxLayout* m_topButtonLayout = nullptr;
+    QLabel* m_titleLabel = nullptr;  // 标题标签
     QWidget* m_minimalistWidget = nullptr;  // 极简模式的自定义widget
     QVBoxLayout* m_minimalistLayout = nullptr;  // 极简模式的布局
     QScrollArea* m_minimalistScrollArea = nullptr;  // 极简模式的滚动区域

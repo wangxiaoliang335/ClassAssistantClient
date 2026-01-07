@@ -774,7 +774,7 @@ void TACMainDialog::Init(QString classId, int user_id)
     
     // 保留原来的trayLabelWidget用于系统托盘功能（隐藏，不使用）
     trayLabelWidget = new TACTrayLabelWidget(this);
-    trayLabelWidget->updateLogo(".\\res\\img\\com_bottom_ic_component@2x.png");
+    trayLabelWidget->updateLogo(":/res/img/com_bottom_ic_component@2x.png");
     //trayLabelWidget->hide();
 
     trayLabelWidget->show();
@@ -1219,7 +1219,7 @@ void TACMainDialog::updateDutyRosterButtonVisibility()
     }
     
     // 更新"值日表"功能键的可见性：如果"关联值日表"为true，则显示；否则隐藏
-    navBarWidget->setTodayScheduleButtonVisible(linkDutyRosterEnabled);
+    navBarWidget->setDutyRosterButtonVisible(linkDutyRosterEnabled);
     qDebug() << "Set duty roster button visibility to:" << linkDutyRosterEnabled;
 }
 

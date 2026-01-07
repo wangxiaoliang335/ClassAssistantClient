@@ -1,4 +1,4 @@
-#include "ScheduleDialog.h"
+﻿#include "ScheduleDialog.h"
 #include "ChatDialog.h"
 #include "FriendGroupDialog.h"
 #include <algorithm>

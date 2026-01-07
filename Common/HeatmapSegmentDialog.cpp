@@ -1,4 +1,4 @@
-#include "HeatmapSegmentDialog.h"
+﻿#include "HeatmapSegmentDialog.h"
 #include "ScheduleDialog.h"
 #include <QHeaderView>
 #include <QColorDialog>

@@ -28,10 +28,12 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="Configuration">
     <ConfigurationType>StaticLibrary</ConfigurationType>
     <PlatformToolset>v142</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="Configuration">
-    <ConfigurationType>Application</ConfigurationType>
-    <PlatformToolset>v143</PlatformToolset>
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <PlatformToolset>v142</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Condition="Exists('$(QtMsBuild)\qt_defaults.props')">
@@ -43,7 +45,7 @@
     <QtBuildConfig>debug</QtBuildConfig>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="QtSettings">
-    <QtInstall>C:\Qt\5.15.2\msvc2019_64</QtInstall>
+    <QtInstall>D:\Qt\5.15.2\msvc2019_64</QtInstall>
     <QtModules>core;gui;widgets;websockets;network;multimedia;printsupport</QtModules>
     <QtBuildConfig>release</QtBuildConfig>
   </PropertyGroup>
@@ -67,8 +69,8 @@
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>C:\workspace\tanmu\libqrencode-master;C:/vcpkg/installed/x64-windows/include;..\ffmpeg-n6.0.1-win64-gpl-shared-6.0\include;.\QXlsx\header;..\webrtc_sdk_template\include;..\webrtc_sdk_template\include\third_party\abseil-cpp;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>WEBRTC_WIN;NOMINMAX;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>C:\workspace\tanmu\libqrencode-master;C:/vcpkg/installed/x64-windows/include;..\ffmpeg-n6.0.1-win64-gpl-shared-6.0\include;.\QXlsx\header;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>NOMINMAX;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <LanguageStandard>stdcpp17</LanguageStandard>
@@ -77,15 +79,20 @@
       <AdditionalDependencies>C:\workspace\tanmu\libqrencode-master\Debug\qrencoded.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <Lib>
-      <AdditionalLibraryDirectories>..\ffmpeg-n6.0.1-win64-gpl-shared-6.0\lib;.\QXlsx\out\build\debug;..\webrtc_sdk_template\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>avcodec.lib;avdevice.lib;avfilter.lib;avformat.lib;avutil.lib;postproc.lib;swresample.lib;swscale.lib;QXlsxQt5.lib;webrtc.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>..\ffmpeg-n6.0.1-win64-gpl-shared-6.0\lib;.\QXlsx\out\build\debug;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>avcodec.lib;avdevice.lib;avfilter.lib;avformat.lib;avutil.lib;postproc.lib;swresample.lib;swscale.lib;QXlsxQt5.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Lib>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
-      <PreprocessorDefinitions>WEBRTC_WIN;NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalIncludeDirectories>.\QXlsx\header;..\ffmpeg-n6.0.1-win64-gpl-shared-6.0\include;C:/vcpkg/installed/x64-windows/include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
+    <Lib>
+      <AdditionalLibraryDirectories>.\QXlsx\out\build\release;..\ffmpeg-n6.0.1-win64-gpl-shared-6.0\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>avcodec.lib;avdevice.lib;avfilter.lib;avformat.lib;avutil.lib;postproc.lib;swresample.lib;swscale.lib;QXlsxQt5.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Lib>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="Configuration">
     <ClCompile>
@@ -184,7 +191,6 @@
     <QtMoc Include="ChatDialog.h" />
     <QtMoc Include="ClassTeacherDelDialog.h" />
     <QtMoc Include="AudioReceiver.h" />
-    <QtMoc Include="WebRTCAudioSender.h" />
     <QtMoc Include="RtmpMediaStreamer.h" />
     <ClInclude Include="CommonInfo.h" />
     <QtMoc Include="TaQTWebSocket.h" />
@@ -201,7 +207,6 @@
   <ItemGroup>
     <ClCompile Include="AudioReceiver.cpp" />
     <ClCompile Include="ClassInfoDialog.cpp" />
-    <ClCompile Include="WebRTCAudioSender.cpp" />
     <ClCompile Include="RtmpMediaStreamer.cpp" />
     <ClCompile Include="AvatarLabel.cpp" />
     <ClCompile Include="CommonInfo.cpp" />

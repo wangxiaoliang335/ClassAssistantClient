@@ -29,6 +29,18 @@ TACNavigationBarWidget::TACNavigationBarWidget(QWidget *parent)
     //buttonGroup->addButton(folderButton);
     layout->addWidget(folderButton);
 
+    // 值日表按钮
+    m_dutyRosterButton = new QPushButton(this);
+    m_dutyRosterButton->setFixedSize(BUTTON_SIZE);
+    m_dutyRosterButton->setIcon(QIcon(":/res/img/home_bottom_ic_clean@2x.png"));
+    m_dutyRosterButton->setIconSize(ICON_SIZE);
+    m_dutyRosterButton->hide(); // 默认隐藏，根据群组设置显示
+    connect(m_dutyRosterButton, &QPushButton::clicked, this, [=]() {
+        emit navType(TACNavigationBarWidgetType::CLASS_SCHEDULE);
+        });
+    buttonGroup->addButton(m_dutyRosterButton);
+    layout->addWidget(m_dutyRosterButton);
+
     /*QPushButton* messageButton = new QPushButton(this);
     messageButton->setFixedSize(BUTTON_SIZE);
     messageButton->setIcon(QIcon(":/res/img/message.png"));
@@ -92,15 +104,15 @@ TACNavigationBarWidget::TACNavigationBarWidget(QWidget *parent)
     buttonGroup->addButton(m_todayScheduleButton);
     layout->addWidget(m_todayScheduleButton);
 
-    QPushButton* userButton = new QPushButton(this);
-    userButton->setFixedSize(BUTTON_SIZE);
-    userButton->setIcon(QIcon(":/res/img/user.png"));
-    userButton->setIconSize(ICON_SIZE);
-    connect(userButton, &QPushButton::clicked, this, [=]() {
-        emit navType(TACNavigationBarWidgetType::USER);
-        });
-    buttonGroup->addButton(userButton);
-    layout->addWidget(userButton);
+    //QPushButton* userButton = new QPushButton(this);
+    //userButton->setFixedSize(BUTTON_SIZE);
+    //userButton->setIcon(QIcon(":/res/img/user.png"));
+    //userButton->setIconSize(ICON_SIZE);
+    //connect(userButton, &QPushButton::clicked, this, [=]() {
+    //    emit navType(TACNavigationBarWidgetType::USER);
+    //    });
+    //buttonGroup->addButton(userButton);
+    //layout->addWidget(userButton);
 
     QLabel* separatorLineLabel0 = new QLabel(this);
     separatorLineLabel0->setObjectName("separatorLineLabel");
@@ -230,5 +242,12 @@ void TACNavigationBarWidget::setTodayScheduleButtonVisible(bool visible)
 {
     if (m_todayScheduleButton) {
         m_todayScheduleButton->setVisible(visible);
+    }
+}
+
+void TACNavigationBarWidget::setDutyRosterButtonVisible(bool visible)
+{
+    if (m_dutyRosterButton) {
+        m_dutyRosterButton->setVisible(visible);
     }
 }

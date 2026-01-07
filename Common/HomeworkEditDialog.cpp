@@ -1,4 +1,4 @@
-#include "HomeworkEditDialog.h"
+﻿#include "HomeworkEditDialog.h"
 #include <QDateTime>
 #include <QMessageBox>
 #include <QDebug>

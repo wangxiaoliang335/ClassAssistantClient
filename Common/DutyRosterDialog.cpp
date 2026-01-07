@@ -1,4 +1,4 @@
-#include "DutyRosterDialog.h"
+﻿#include "DutyRosterDialog.h"
 #include <QFile>
 #include <QTextStream>
 #include <QDate>
@@ -12,6 +12,9 @@
 #include <QEvent>
 #include <QTimer>
 #include <QAbstractButton>
+#include <QMap>
+#include <QHeaderView>
+#include <QPalette>
 QT_BEGIN_NAMESPACE_XLSX
 QT_END_NAMESPACE_XLSX
 
@@ -20,11 +23,10 @@ DutyRosterDialog::DutyRosterDialog(QWidget* parent)
 {
     // 移除标题栏
     setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
+    setAttribute(Qt::WA_TranslucentBackground);  // 启用透明背景以支持圆角
     
     setWindowTitle("值日表");
-    resize(1000, 700);
-    // 使用与QGroupInfo一致的深色主题
-    setStyleSheet("background-color: #282A2B; color: #ffffff;");
+    resize(1050, 735);  // 完整模式初始大小（1000x700增加5%）
     
     // 创建HTTP处理器
     m_httpHandler = new TAHttpHandler(this);
@@ -38,15 +40,55 @@ DutyRosterDialog::~DutyRosterDialog()
 
 void DutyRosterDialog::setupUI()
 {
-    m_mainLayout = new QVBoxLayout(this);
+    // 创建外层容器用于圆角效果
+    QVBoxLayout* rootLayout = new QVBoxLayout(this);
+    rootLayout->setContentsMargins(0, 0, 0, 0);
+    rootLayout->setSpacing(0);
+    
+    m_containerWidget = new QWidget(this);
+    m_containerWidget->setObjectName("dutyRosterContainer");
+    m_containerWidget->setStyleSheet(
+        "#dutyRosterContainer {"
+        "background-color: #282A2B;"
+        "border-radius: 16px;"
+        "}"
+    );
+    
+    rootLayout->addWidget(m_containerWidget);
+    
+    m_mainLayout = new QVBoxLayout(m_containerWidget);
     m_mainLayout->setContentsMargins(10, 10, 10, 10);
     m_mainLayout->setSpacing(10);
+    
+    // 标题栏（居中显示）
+    QHBoxLayout* titleLayout = new QHBoxLayout;
+    titleLayout->setContentsMargins(0, 0, 0, 0);
+    titleLayout->setSpacing(10);
+    
+    titleLayout->addStretch();  // 左侧弹性空间
+    
+    m_titleLabel = new QLabel("值日表", m_containerWidget);
+    m_titleLabel->setStyleSheet(
+        "QLabel {"
+        "color: #ffffff;"
+        "font-size: 18px;"
+        "font-weight: bold;"
+        "background: transparent;"
+        "padding: 5px 0px;"
+        "}"
+    );
+    m_titleLabel->setAlignment(Qt::AlignCenter);
+    titleLayout->addWidget(m_titleLabel);
+    
+    titleLayout->addStretch();  // 右侧弹性空间
+    
+    m_mainLayout->addLayout(titleLayout);
     
     // 顶部栏：关闭按钮和功能按钮
     QHBoxLayout* topLayout = new QHBoxLayout;
     
     // 关闭按钮（右上角）
-    m_closeButton = new QPushButton("✕", this);
+    m_closeButton = new QPushButton("✕", m_containerWidget);
     m_closeButton->setFixedSize(30, 30);
     m_closeButton->setStyleSheet(
         "QPushButton {"
@@ -66,8 +108,8 @@ void DutyRosterDialog::setupUI()
     topLayout->addStretch();
     
     // 功能按钮：导入、极简
-    m_importButton = new QPushButton("导入", this);
-    m_minimalistButton = new QPushButton("极简", this);
+    m_importButton = new QPushButton("导入", m_containerWidget);
+    m_minimalistButton = new QPushButton("极简", m_containerWidget);
     
     QString buttonStyle = 
         "QPushButton {"
@@ -98,7 +140,7 @@ void DutyRosterDialog::setupUI()
     m_mainLayout->addLayout(topLayout);
     
     // 表格
-    m_tableWidget = new QTableWidget(this);
+    m_tableWidget = new QTableWidget(m_containerWidget);
     m_tableWidget->setStyleSheet(
         "QTableWidget {"
         "background-color: #1E1E1E;"
@@ -119,6 +161,9 @@ void DutyRosterDialog::setupUI()
         "QTableWidget::item:!editable {"
         "background-color: rgba(0,0,0,0.18);"
         "}"
+        "QHeaderView {"
+        "background-color: #282A2B;"
+        "}"
         "QHeaderView::section {"
         "background-color: #282A2B;"
         "color: #ffffff;"
@@ -132,11 +177,13 @@ void DutyRosterDialog::setupUI()
         "}"
     );
     
-    // 隐藏corner button（左上角白色区域）
+    // 隐藏corner button（左上角）
     m_tableWidget->setCornerButtonEnabled(false);
     
     // 使用定时器延迟设置corner button样式，确保widget已创建
+    // 同时处理右上角的空白区域（如果存在额外的列或区域）
     QTimer::singleShot(100, this, [this]() {
+        // 设置左上角corner button
         QAbstractButton* cornerBtn = m_tableWidget->findChild<QAbstractButton*>();
         if (cornerBtn) {
             cornerBtn->setStyleSheet(
@@ -145,6 +192,22 @@ void DutyRosterDialog::setupUI()
                 "border: 1px solid #3E3E3E;"
                 "}"
             );
+        }
+        
+        // 获取水平表头并设置其背景色，确保右上角区域也使用窗口背景
+        QHeaderView* horizontalHeader = m_tableWidget->horizontalHeader();
+        if (horizontalHeader) {
+            horizontalHeader->setStyleSheet(
+                "QHeaderView::section {"
+                "background-color: #282A2B;"
+                "color: #ffffff;"
+                "padding: 8px;"
+                "border: 1px solid #3E3E3E;"
+                "font-weight: bold;"
+                "}"
+            );
+            // 确保表头的背景色正确
+            horizontalHeader->setBackgroundRole(QPalette::Window);
         }
     });
     
@@ -156,7 +219,7 @@ void DutyRosterDialog::setupUI()
     connect(m_tableWidget, &QTableWidget::cellChanged, this, &DutyRosterDialog::onCellChanged);
     
     // 创建极简模式的widget和滚动区域
-    m_minimalistScrollArea = new QScrollArea(this);
+    m_minimalistScrollArea = new QScrollArea(m_containerWidget);
     m_minimalistScrollArea->setWidgetResizable(true);
     m_minimalistScrollArea->setStyleSheet(
         "QScrollArea {"
@@ -449,14 +512,19 @@ void DutyRosterDialog::updateTableDisplay()
     }
     
     // 设置垂直表头（第一列作为行标题，从第二行开始）
+    // 显示逻辑：如果原始数据第一列为空，则垂直表头也显示空（但内部逻辑仍知道是延续行）
     if (rowCount > 1 && colCount > 0) {
         QStringList rowHeaders;
         for (int row = 1; row < rowCount; ++row) {
-            if (row < m_dutyData.size() && !m_dutyData[row].isEmpty() && m_dutyData[row].size() > 0) {
-                rowHeaders.append(m_dutyData[row][0]);
-            } else {
-                rowHeaders.append("");
+            // 检查原始数据的第一列是否为空
+            QString headerText = "";
+            if (row < m_dutyData.size() && !m_dutyData[row].isEmpty() && 
+                !m_dutyData[row][0].trimmed().isEmpty()) {
+                // 第一列不为空，显示任务名称
+                headerText = m_dutyData[row][0].trimmed();
             }
+            // 如果第一列为空，headerText保持为空字符串（垂直表头显示为空）
+            rowHeaders.append(headerText);
         }
         m_tableWidget->setVerticalHeaderLabels(rowHeaders);
     }
@@ -504,6 +572,10 @@ void DutyRosterDialog::switchToMinimalistMode()
     m_tableWidget->hide();
     m_minimalistScrollArea->show();
     
+    // 缩小窗口高度（极简模式），保持宽度不变，高度再增加5%（从471到495）
+    int currentWidth = width();
+    resize(currentWidth, 495);
+    
     // 清空极简模式布局
     QLayoutItem* item;
     while ((item = m_minimalistLayout->takeAt(0)) != nullptr) {
@@ -520,10 +592,14 @@ void DutyRosterDialog::switchToMinimalistMode()
         return;
     }
     
-    // 创建横排显示：任务在左，人员在右
     if (m_dutyData.size() < 2) {
         return;
     }
+    
+    // 收集所有任务及其对应的人员
+    // 使用QMap来合并同一任务的多行数据
+    QMap<QString, QStringList> taskToPersons;
+    QStringList taskNames;  // 按出现顺序保存任务名称
     
     // 遍历所有任务行（跳过第一行日期行）
     for (int dataRow = 1; dataRow < m_dutyData.size(); ++dataRow) {
@@ -532,116 +608,106 @@ void DutyRosterDialog::switchToMinimalistMode()
             continue;
         }
         
-        // 获取任务名称（第一列）
-        QString taskName;
-        if (dataRow < m_dutyData.size() && !m_dutyData[dataRow].isEmpty()) {
-            taskName = m_dutyData[dataRow][0].trimmed();
-        }
+        // 获取任务名称（使用延续行逻辑）
+        QString taskName = getTaskNameForRow(dataRow);
         
         if (taskName.isEmpty()) {
             continue;
         }
         
+        // 记录任务名称（按出现顺序，不重复）
+        if (!taskNames.contains(taskName)) {
+            taskNames.append(taskName);
+        }
+        
         // 获取今日的值日人员（todayDataCol列）
-        QStringList dutyPersons;
         if (dataRow < m_dutyData.size() && todayDataCol < m_dutyData[dataRow].size()) {
             QString person = m_dutyData[dataRow][todayDataCol].trimmed();
             if (!person.isEmpty()) {
-                dutyPersons.append(person);
-            }
-        }
-        
-        // 如果同一任务有多行（如多个扫地人员），合并显示
-        // 检查下一行是否是同一任务（跳过要求行）
-        int nextRow = dataRow + 1;
-        while (nextRow < m_dutyData.size()) {
-            // 如果遇到要求行，停止合并
-            if (isRequirementRow(nextRow)) {
-                break;
-            }
-            
-            // 检查是否是同一任务
-            if (nextRow < m_dutyData.size() && 
-                !m_dutyData[nextRow].isEmpty() &&
-                m_dutyData[nextRow][0].trimmed() == taskName) {
-                // 合并同一任务的人员
-                if (todayDataCol < m_dutyData[nextRow].size()) {
-                    QString person = m_dutyData[nextRow][todayDataCol].trimmed();
-                    if (!person.isEmpty() && !dutyPersons.contains(person)) {
-                        dutyPersons.append(person);
-                    }
+                // 如果任务已存在，添加人员到列表；否则创建新列表
+                if (!taskToPersons.contains(taskName)) {
+                    taskToPersons[taskName] = QStringList();
                 }
-                nextRow++;
-            } else {
-                // 不是同一任务，停止合并
-                break;
+                if (!taskToPersons[taskName].contains(person)) {
+                    taskToPersons[taskName].append(person);
+                }
             }
         }
-        
-        // 创建横排布局：任务名称 | 值日人员
-        QHBoxLayout* rowLayout = new QHBoxLayout;
-        rowLayout->setSpacing(15);
-        
-        // 任务名称标签（左对齐）
-        QLabel* taskLabel = new QLabel(taskName, m_minimalistWidget);
-        taskLabel->setStyleSheet(
+    }
+    
+    if (taskToPersons.isEmpty()) {
+        return;
+    }
+    
+    // 创建表格形式的极简模式
+    // 首先创建表头行
+    QHBoxLayout* headerLayout = new QHBoxLayout;
+    headerLayout->setSpacing(2);
+    
+    // 创建表头（任务名称）
+    for (const QString& taskName : taskNames) {
+        QLabel* headerLabel = new QLabel(taskName, m_minimalistWidget);
+        headerLabel->setStyleSheet(
             "QLabel {"
             "background-color: #282A2B;"
             "color: #ffffff;"
-            "padding: 10px 15px;"
+            "padding: 6px 8px;"
             "border: 1px solid #3E3E3E;"
             "font-size: 14px;"
             "font-weight: bold;"
-            "min-width: 120px;"
+            "min-height: 30px;"
             "}"
         );
-        taskLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        headerLabel->setAlignment(Qt::AlignCenter);
+        headerLabel->setWordWrap(true);  // 允许换行
+        headerLayout->addWidget(headerLabel, 1);  // 每个表头平均分配空间
+    }
+    
+    m_minimalistLayout->addLayout(headerLayout);
+    
+    // 确定最大人员行数（用于创建多行显示）
+    int maxPersonsCount = 0;
+    for (const QStringList& persons : taskToPersons) {
+        if (persons.size() > maxPersonsCount) {
+            maxPersonsCount = persons.size();
+        }
+    }
+    
+    // 创建数据行（每个人员一行）
+    for (int personIndex = 0; personIndex < maxPersonsCount; ++personIndex) {
+        QHBoxLayout* dataRowLayout = new QHBoxLayout;
+        dataRowLayout->setSpacing(2);
         
-        // 值日人员标签（左对齐，可以显示多个名字）
-        QString personsText = dutyPersons.join("  ");
-        QLabel* personLabel = new QLabel(personsText, m_minimalistWidget);
-        personLabel->setStyleSheet(
-            "QLabel {"
-            "background-color: #1E1E1E;"
-            "color: #ffffff;"
-            "padding: 10px 15px;"
-            "border: 1px solid #3E3E3E;"
-            "font-size: 14px;"
-            "}"
-        );
-        personLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-        personLabel->setWordWrap(false);
+        for (const QString& taskName : taskNames) {
+            QString personText = "";
+            if (taskToPersons.contains(taskName) && personIndex < taskToPersons[taskName].size()) {
+                personText = taskToPersons[taskName][personIndex];
+            }
+            
+            QLabel* personLabel = new QLabel(personText, m_minimalistWidget);
+            personLabel->setStyleSheet(
+                "QLabel {"
+                "background-color: #1E1E1E;"
+                "color: #ffffff;"
+                "padding: 6px 8px;"
+                "border: 1px solid #3E3E3E;"
+                "font-size: 14px;"
+                "min-height: 30px;"
+                "}"
+            );
+            personLabel->setAlignment(Qt::AlignCenter);
+            personLabel->setWordWrap(true);
+            dataRowLayout->addWidget(personLabel, 1);
+        }
         
-        rowLayout->addWidget(taskLabel);
-        rowLayout->addWidget(personLabel, 1);  // 值日人员列占据剩余空间
-        
-        m_minimalistLayout->addLayout(rowLayout);
-        
-        // 跳过已处理的行
-        dataRow = nextRow - 1;
+        m_minimalistLayout->addLayout(dataRowLayout);
     }
     
     // 添加要求行（如果有）
     if (m_requirementRowIndex >= 1 && m_requirementRowIndex < m_dutyData.size()) {
-        m_minimalistLayout->addSpacing(10);
+        m_minimalistLayout->addSpacing(15);
         
-        QHBoxLayout* reqLayout = new QHBoxLayout;
-        
-        QLabel* reqLabel = new QLabel("要求", m_minimalistWidget);
-        reqLabel->setStyleSheet(
-            "QLabel {"
-            "background-color: #282A2B;"
-            "color: #ffffff;"
-            "padding: 10px 15px;"
-            "border: 1px solid #3E3E3E;"
-            "font-size: 14px;"
-            "font-weight: bold;"
-            "min-width: 120px;"
-            "}"
-        );
-        reqLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-        
-        // 合并要求行的所有列内容（除第一列外）
+        // 合并要求行的所有列内容
         QString reqText;
         if (m_requirementRowIndex < m_dutyData.size()) {
             const QList<QString>& reqRow = m_dutyData[m_requirementRowIndex];
@@ -672,7 +738,7 @@ void DutyRosterDialog::switchToMinimalistMode()
                 }
             }
             
-            // 如果多个列都有内容，用空格连接；如果只有一个列有内容，直接使用
+            // 如果多个列都有内容，用空格连接
             reqText = reqParts.join(" ");
         }
         
@@ -681,20 +747,17 @@ void DutyRosterDialog::switchToMinimalistMode()
             "QLabel {"
             "background-color: #1E1E1E;"
             "color: #ffffff;"
-            "padding: 10px 15px;"
+            "padding: 10px;"
             "border: 1px solid #3E3E3E;"
             "font-size: 14px;"
             "min-height: 40px;"
             "}"
         );
-        reqContentLabel->setAlignment(Qt::AlignLeft | Qt::AlignTop);  // 改为顶部对齐，支持多行显示
-        reqContentLabel->setWordWrap(true);  // 启用自动换行
-        reqContentLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);  // 允许选择文本
+        reqContentLabel->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+        reqContentLabel->setWordWrap(true);
+        reqContentLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
         
-        reqLayout->addWidget(reqLabel);
-        reqLayout->addWidget(reqContentLabel, 1);
-        
-        m_minimalistLayout->addLayout(reqLayout);
+        m_minimalistLayout->addWidget(reqContentLabel);
     }
     
     m_minimalistLayout->addStretch();
@@ -709,6 +772,9 @@ void DutyRosterDialog::switchToFullMode()
     // 隐藏极简模式widget，显示表格
     m_minimalistScrollArea->hide();
     m_tableWidget->show();
+    
+    // 恢复完整模式的窗口大小（增加5%）
+    resize(1050, 735);
     
     // 显示所有列
     int colCount = m_tableWidget->columnCount();
@@ -893,5 +959,37 @@ int DutyRosterDialog::getTodayColumn()
     }
     
     return -1;  // 不是工作日
+}
+
+QString DutyRosterDialog::getTaskNameForRow(int dataRow)
+{
+    if (dataRow < 1 || dataRow >= m_dutyData.size()) {
+        return "";
+    }
+    
+    // 如果第一列不为空，直接返回
+    if (!m_dutyData[dataRow].isEmpty() && m_dutyData[dataRow][0].trimmed().isEmpty() == false) {
+        return m_dutyData[dataRow][0].trimmed();
+    }
+    
+    // 如果第一列为空，向前查找最近的非空第一列作为任务名称
+    // 但要跳过要求行
+    for (int i = dataRow - 1; i >= 1; --i) {
+        // 跳过要求行
+        if (isRequirementRow(i)) {
+            continue;
+        }
+        
+        // 检查第一列是否非空
+        if (i < m_dutyData.size() && !m_dutyData[i].isEmpty() && 
+            !m_dutyData[i][0].trimmed().isEmpty()) {
+            return m_dutyData[i][0].trimmed();
+        }
+        
+        // 如果第一列也为空，继续向前查找
+    }
+    
+    // 如果找不到，返回空字符串
+    return "";
 }
 

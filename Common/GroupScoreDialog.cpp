@@ -1,4 +1,4 @@
-#include "ScheduleDialog.h"
+﻿#include "ScheduleDialog.h"
 #include "GroupScoreDialog.h"
 #include <QMessageBox>
 #include <QInputDialog>

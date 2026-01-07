@@ -1,4 +1,4 @@
-#include "StudentAttributeDialog.h"
+﻿#include "StudentAttributeDialog.h"
 #include "ScheduleDialog.h"
 #include "ScoreHeaderIdStorage.h"
 #include "CommentStorage.h"

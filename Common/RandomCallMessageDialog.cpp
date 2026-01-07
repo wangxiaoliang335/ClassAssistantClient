@@ -1,4 +1,4 @@
-#include "RandomCallMessageDialog.h"
+﻿#include "RandomCallMessageDialog.h"
 #include <QPainter>
 #include <QApplication>
 #include <QDesktopWidget>

@@ -1,4 +1,4 @@
-#include "ScheduleDialog.h"
+﻿#include "ScheduleDialog.h"
 #include "RandomCallDialog.h"
 #include <QMessageBox>
 

@@ -1,4 +1,4 @@
-#include "NotificationViewDialog.h"
+﻿#include "NotificationViewDialog.h"
 #include <QPainter>
 #include <QDebug>
 #include <QPixmap>

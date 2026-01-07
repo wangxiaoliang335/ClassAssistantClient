@@ -42,6 +42,9 @@
         <file>res/img/home_bottom_ic_crowd.png</file>
         <file>res/img/home_bottom_ic_crowd@2x.png</file>
         <file>res/img/home_bottom_ic_crowd@3x.png</file>
+        <file>res/img/home_bottom_ic_clean.png</file>
+        <file>res/img/home_bottom_ic_clean@2x.png</file>
+        <file>res/img/home_bottom_ic_clean@3x.png</file>
         <file>res/img/home_bottom_ic_friend.png</file>
         <file>res/img/home_bottom_ic_friend@2x.png</file>
         <file>res/img/home_bottom_ic_friend@3x.png</file>
@@ -77,5 +80,6 @@
         <file>res/img/class_card_ic_random@3x.png</file>
         <file>res/img/home_popup_ic_reduce_hover@2x.png</file>
         <file>res/img/home_popup_ic_expand_hover@2x.png</file>
+        <file>res/img/com_bottom_ic_component@2x.png</file>
     </qresource>
 </RCC>

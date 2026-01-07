@@ -1,4 +1,4 @@
-#include "RandomCallDialog.h"
+﻿#include "RandomCallDialog.h"
 #include "StudentAttributeDialog.h"
 #include "RandomCallMessageDialog.h"
 #include <QInputDialog>
