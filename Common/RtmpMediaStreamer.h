@@ -12,7 +12,7 @@ struct AVPacket;
 struct SwrContext;
 
 /**
- * 使用 FFmpeg API 推流，将本地音频通过 RTMP 推送到 SRS。
+ * 使用 FFmpeg API 推流，将本地音频通过 SRT 推送到服务器（MPEG-TS over SRT）。
  */
 class RtmpMediaStreamer : public QObject
 {
@@ -21,7 +21,8 @@ public:
     explicit RtmpMediaStreamer(QObject* parent = nullptr);
     ~RtmpMediaStreamer() override;
 
-    void setSrsServer(const QString& host, quint16 port = 1935);
+    // 兼容旧接口名：现在使用 SRT 推流，port 默认 10080
+    void setSrsServer(const QString& host, quint16 port = 10080);
     void setStreamKey(const QString& streamKey);
     void setAudioFormat(int sampleRate, int channels);
 
@@ -37,7 +38,7 @@ signals:
     void errorOccurred(const QString& error);
 
 private:
-    QString buildRtmpUrl() const;
+    QString buildSrtUrl() const;
     bool initOutputContext();
     bool initEncoder();
     bool initSwr();
@@ -46,7 +47,7 @@ private:
     void emitError(const QString& msg);
 
     QString m_host = QStringLiteral("47.100.126.194");
-    quint16 m_port = 1935;
+    quint16 m_port = 10080; // SRT 默认端口（按服务器实际配置调整）
     QString m_streamKey;
     int m_sampleRate = 48000;
     int m_channels = 1;

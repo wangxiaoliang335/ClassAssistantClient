@@ -56,12 +56,12 @@ void RtmpMediaStreamer::setAudioFormat(int sampleRate, int channels)
 bool RtmpMediaStreamer::start()
 {
     if (m_isRunning) {
-        emitError(QStringLiteral("RTMP 推流已在进行中"));
+        emitError(QStringLiteral("SRT 推流已在进行中"));
         return false;
     }
 
     if (m_streamKey.isEmpty()) {
-        emitError(QStringLiteral("RTMP 流名称为空，无法开始推流"));
+        emitError(QStringLiteral("SRT 流名称为空，无法开始推流"));
         return false;
     }
 
@@ -84,13 +84,13 @@ bool RtmpMediaStreamer::start()
 
     int ret = avformat_write_header(m_outputCtx, nullptr);
     if (ret < 0) {
-        emitError(QStringLiteral("写入 RTMP 头部失败: %1").arg(avErrorToString(ret)));
+        emitError(QStringLiteral("写入 SRT 头部失败: %1").arg(avErrorToString(ret)));
         cleanup();
         return false;
     }
 
     emit started();
-    emitLog(QStringLiteral("RTMP 推流已启动，目标: %1").arg(buildRtmpUrl()));
+    emitLog(QStringLiteral("SRT 推流已启动，目标: %1").arg(buildSrtUrl()));
     m_isRunning = true;
     return true;
 }
@@ -120,7 +120,7 @@ void RtmpMediaStreamer::stop()
     cleanup();
     m_isRunning = false;
     emit stopped();
-    emitLog(QStringLiteral("RTMP 推流已停止"));
+    emitLog(QStringLiteral("SRT 推流已停止"));
 }
 
 bool RtmpMediaStreamer::isRunning() const
@@ -169,7 +169,7 @@ void RtmpMediaStreamer::pushPcm(const QByteArray& pcm)
             ret = av_interleaved_write_frame(m_outputCtx, m_packet);
             av_packet_unref(m_packet);
             if (ret < 0) {
-                emitError(QStringLiteral("写入 RTMP 帧失败: %1").arg(avErrorToString(ret)));
+                emitError(QStringLiteral("写入 SRT 帧失败: %1").arg(avErrorToString(ret)));
                 break;
             }
         }
@@ -182,9 +182,9 @@ void RtmpMediaStreamer::pushPcm(const QByteArray& pcm)
     }
 }
 
-QString RtmpMediaStreamer::buildRtmpUrl() const
+QString RtmpMediaStreamer::buildSrtUrl() const
 {
-    return QStringLiteral("rtmp://%1:%2/live/%3")
+    return QStringLiteral("srt://%1:%2?streamid=#!::r=live/%3,m=publish")
         .arg(m_host)
         .arg(m_port)
         .arg(m_streamKey);
@@ -192,9 +192,9 @@ QString RtmpMediaStreamer::buildRtmpUrl() const
 
 bool RtmpMediaStreamer::initOutputContext()
 {
-    QString url = buildRtmpUrl();
+    QString url = buildSrtUrl();
     QByteArray urlUtf8 = url.toUtf8();
-    int ret = avformat_alloc_output_context2(&m_outputCtx, nullptr, "flv", urlUtf8.constData());
+    int ret = avformat_alloc_output_context2(&m_outputCtx, nullptr, "mpegts", urlUtf8.constData());
     if (ret < 0 || !m_outputCtx) {
         emitError(QStringLiteral("创建输出上下文失败: %1").arg(avErrorToString(ret)));
         return false;
@@ -246,7 +246,7 @@ bool RtmpMediaStreamer::initOutputContext()
     if (!(m_outputCtx->oformat->flags & AVFMT_NOFILE)) {
         ret = avio_open2(&m_outputCtx->pb, urlUtf8.constData(), AVIO_FLAG_WRITE, nullptr, nullptr);
         if (ret < 0) {
-            emitError(QStringLiteral("打开 RTMP 输出失败: %1").arg(avErrorToString(ret)));
+            emitError(QStringLiteral("打开 SRT 输出失败: %1").arg(avErrorToString(ret)));
             return false;
         }
     }

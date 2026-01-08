@@ -1,5 +1,6 @@
 ﻿#pragma once
 #include "RtmpMediaStreamer.h"
+#include "RtmpAvStreamer.h"
 #include <QApplication>
 #include <QDialog>
 #include <QVBoxLayout>
@@ -28,6 +29,13 @@
 #include <QAudioDeviceInfo>
 #include <QAudioFormat>
 #include <QIODevice>
+#include <QCamera>
+#include <QCameraInfo>
+#include <QCameraViewfinderSettings>
+#include <QVideoProbe>
+#include <QVideoFrame>
+#include <QAbstractVideoSurface>
+#include <QAbstractVideoBuffer>
 #include <QTimer>
 #include <QMetaObject>
 #include <QMediaPlayer>
@@ -71,6 +79,17 @@
 #include "ChatDialog.h"
 #include "CommonInfo.h"
 #include "QGroupInfo.h"
+
+// 统一输出到 Windows 的 OutputDebugString（便于用 DebugView / VS 输出窗口查看）
+static inline void TAC_OdsLine(const QString& s)
+{
+#ifdef _WIN32
+	::OutputDebugStringW(reinterpret_cast<LPCWSTR>(s.utf16()));
+	::OutputDebugStringW(L"\r\n");
+#else
+	qWarning().noquote() << s;
+#endif
+}
 #include "TAHttpHandler.h"
 #include "ArrangeSeatDialog.h"
 #include "GroupNotifyDialog.h"
@@ -2533,6 +2552,11 @@ public:
 			}
 		});
 
+		// 摄像头：点击开始/停止推流（SRT）
+		connect(btnCam, &QPushButton::clicked, this, [this, btnCam]() {
+			toggleCameraStreaming(btnCam);
+		});
+
 		// 时间 + 科目行
 		QHBoxLayout* timeLayout = new QHBoxLayout(this);
 		m_timeButtonStyle = "background-color: #2D2E2D; color: white; font-size:12px; min-width:40px;";
@@ -3046,14 +3070,14 @@ public:
 		// 信号与槽连接（C++11 lambda）
 		//connect(btnTalk, &QPushButton::clicked, this, &ScheduleDialog::onBtnTalkClicked);
 		
-		// 初始化 RTMP 推流器（取代 WebRTC）
+		// 初始化 SRT 推流器（取代 WebRTC）
 		m_rtmpStreamer = new RtmpMediaStreamer(this);
-		m_rtmpStreamer->setSrsServer(QStringLiteral("47.100.126.194"), 1935);
+		m_rtmpStreamer->setSrsServer(QStringLiteral("47.100.126.194"), 10080);
 		connect(m_rtmpStreamer, &RtmpMediaStreamer::logMessage, this, [](const QString& log) {
-			qDebug() << "[RTMP]" << log;
+			qDebug() << "[SRT]" << log;
 		});
 		connect(m_rtmpStreamer, &RtmpMediaStreamer::errorOccurred, this, [](const QString& err) {
-			qWarning() << "[RTMP][Error]" << err;
+			qWarning() << "[SRT][Error]" << err;
 		});
 		
 		// ========== 原有功能已注释 ==========
@@ -3638,8 +3662,330 @@ private slots:
 		if (data.isEmpty()) {
 			return;
 		}
+		// 优先推送到摄像头音视频推流器（如正在运行）
+		if (m_camStreamer && m_camStreamer->isRunning()) {
+			m_camStreamer->pushPcm(data);
+			return;
+		}
+		// 兼容：旧的纯音频 RTMP 推流器
 		if (m_rtmpStreamer && m_rtmpStreamer->isRunning()) {
 			m_rtmpStreamer->pushPcm(data);
+		}
+	}
+
+private:
+	// 某些 Windows/DirectShow 后端下 QVideoProbe 可能拿不到帧（你现在就是这种情况：setSource 成功但一直没回调）。
+	// 这里补一个更稳的方案：给 QCamera 挂一个 QAbstractVideoSurface，当作 viewfinder，
+	// 从 surface 的 present() 里直接拿到每一帧。
+	class TacCameraSurface : public QAbstractVideoSurface
+	{
+	public:
+		explicit TacCameraSurface(ScheduleDialog* owner)
+			: QAbstractVideoSurface(owner)
+			, m_owner(owner)
+		{}
+
+		QList<QVideoFrame::PixelFormat> supportedPixelFormats(QAbstractVideoBuffer::HandleType handleType) const override
+		{
+			// 我们只处理 CPU 可读的帧
+			if (handleType != QAbstractVideoBuffer::NoHandle) {
+				return {};
+			}
+			return {
+				QVideoFrame::Format_ARGB32,
+				QVideoFrame::Format_ARGB32_Premultiplied,
+				QVideoFrame::Format_RGB32,
+				QVideoFrame::Format_BGR32,
+				QVideoFrame::Format_RGB24,
+				QVideoFrame::Format_BGR24,
+				QVideoFrame::Format_YUYV,
+				QVideoFrame::Format_UYVY,
+				QVideoFrame::Format_NV21,
+				QVideoFrame::Format_NV12,
+				QVideoFrame::Format_YV12,
+				QVideoFrame::Format_YUV420P
+			};
+		}
+
+		bool present(const QVideoFrame& frame) override
+		{
+			if (m_owner) {
+				m_owner->handleCameraFrame(frame, QStringLiteral("surface"));
+			}
+			return true;
+		}
+
+	private:
+		ScheduleDialog* m_owner = nullptr;
+	};
+
+	void handleCameraFrame(const QVideoFrame& frame, const QString& from)
+	{
+		if (!m_camStreamer) return;
+
+		if (!frame.isValid()) return;
+		++m_camFramesRaw;
+
+		// 首帧触发启动推流（避免服务端因无数据而超时）
+		if (m_camStarting && !m_camStreamer->isRunning()) {
+			TAC_OdsLine(QStringLiteral("SRT_CAM(%1) 首帧已到达，准备启动推流器").arg(from));
+
+			if (!m_camStartedSignalConnected) {
+				m_camStartedSignalConnected = true;
+				connect(m_camStreamer, &RtmpAvStreamer::started, this, [this]() {
+					m_camStarting = false;
+					TAC_OdsLine(QStringLiteral("SRT_CAM 推流器 started()"));
+				});
+			}
+
+			if (!m_camStreamer->start()) {
+				m_camStarting = false;
+				stopCameraStreaming(m_btnCam);
+				QMessageBox::warning(this, QString::fromUtf8(u8"提示"), QString::fromUtf8(u8"推流启动失败"));
+				return;
+			}
+			// 关键：避免 probe/surface 双路帧在 started() 之前重复触发 start()
+			m_camStarting = false;
+			// 不 return：继续把当前帧推给推流器（支持 NV21/NV12 等格式由推流器内部转换）
+		}
+
+		// 推送帧：推流器内部会处理像素格式（NV21/NV12/YUYV 等）并转成可编码的 BGRA
+		if (m_camStreamer) {
+			m_camStreamer->pushVideoFrame(frame);
+			++m_camFramesSent;
+		}
+	}
+
+	void toggleCameraStreaming(QPushButton* btnCam)
+	{
+		if (!btnCam) return;
+
+		// Stop if running
+		if (m_camStreamer && m_camStreamer->isRunning()) {
+			stopCameraStreaming(btnCam);
+			return;
+		}
+
+		// 1) 检查摄像头
+		const QList<QCameraInfo> cams = QCameraInfo::availableCameras();
+		if (cams.isEmpty()) {
+			QMessageBox::warning(this, QString::fromUtf8(u8"提示"), QString::fromUtf8(u8"未检测到可用摄像头"));
+			return;
+		}
+
+		// 2) 初始化推流器（如果没有就创建）
+		if (!m_camStreamer) {
+			m_camStreamer = new RtmpAvStreamer(this);
+			m_camStreamer->setSrsServer(QStringLiteral("47.100.126.194"), 10080);
+			connect(m_camStreamer, &RtmpAvStreamer::logMessage, this, [](const QString& log) {
+				qDebug() << "[SRT_AV]" << log;
+			});
+			connect(m_camStreamer, &RtmpAvStreamer::errorOccurred, this, [this](const QString& err) {
+				qWarning() << "[SRT_AV][Error]" << err;
+				// 推流出错时自动停止并恢复按钮状态，避免 UI 假启动
+				QMetaObject::invokeMethod(this, [this, err]() {
+					if (m_camStreamer && m_camStreamer->isRunning()) {
+						stopCameraStreaming(m_btnCam);
+					}
+					QMessageBox::warning(this, QString::fromUtf8(u8"推流失败"), err);
+				}, Qt::QueuedConnection);
+			});
+		}
+
+		// 3) 生成 streamKey（和之前对讲类似：groupId + userId）
+		if (m_unique_group_id.isEmpty() || m_userId.isEmpty()) {
+			QMessageBox::warning(this, QString::fromUtf8(u8"提示"), QString::fromUtf8(u8"群组ID或用户ID为空，无法推流"));
+			return;
+		}
+		// 生成安全的 streamKey 片段（替换非法字符为 '_'）
+		auto sanitizeId = [](const QString& src) -> QString {
+			QString safe = src;
+			static const QRegularExpression invalidPattern(QStringLiteral("[^A-Za-z0-9_\\-]"));
+			return safe.replace(invalidPattern, QStringLiteral("_"));
+		};
+		QString streamName = QStringLiteral("cam_%1_%2")
+			.arg(sanitizeId(m_unique_group_id), sanitizeId(m_userId));
+		m_camStreamer->setStreamKey(streamName);
+		// 先按常用规格配置输出（实际输入分辨率不同会在内部缩放）
+		m_camStreamer->setVideoFormat(640, 480, 25);
+
+		// 4) 麦克风：有就采集，没有就只推视频
+		bool micAvailable = !QAudioDeviceInfo::defaultInputDevice().isNull();
+		bool audioStarted = false;
+		if (micAvailable) {
+			QAudioFormat preferredFormat;
+			preferredFormat.setSampleRate(44100);
+			preferredFormat.setChannelCount(1);
+			preferredFormat.setSampleSize(16);
+			preferredFormat.setCodec("audio/pcm");
+			preferredFormat.setByteOrder(QAudioFormat::LittleEndian);
+			preferredFormat.setSampleType(QAudioFormat::SignedInt);
+
+			if (startAudioCapture(preferredFormat)) {
+				// 仅支持 S16LE，否则不启用音频（避免噪音/乱码）
+				bool fmtOk = (m_audioFormat.sampleSize() == 16
+					&& m_audioFormat.sampleType() == QAudioFormat::SignedInt
+					&& m_audioFormat.byteOrder() == QAudioFormat::LittleEndian);
+				if (fmtOk) {
+					m_camStreamer->setAudioEnabled(true);
+					m_camStreamer->setAudioFormat(m_audioFormat.sampleRate(), m_audioFormat.channelCount());
+					audioStarted = true;
+				} else {
+					qWarning() << "麦克风格式不支持(S16LE required)，将只推视频";
+					stopAudioCapture();
+					m_camStreamer->setAudioEnabled(false);
+				}
+			} else {
+				m_camStreamer->setAudioEnabled(false);
+			}
+		} else {
+			m_camStreamer->setAudioEnabled(false);
+		}
+
+		// 5) 启动摄像头采集（QVideoProbe 获取帧）
+		// 说明：SRS/SRT 端如果在连接建立后长时间收不到 TS 包，会判定超时断开（你日志里的 SrtTimeout）。
+		// 因此这里改为：先启动摄像头，拿到首帧后再 start() 推流器，并在 started() 后立刻发送首帧。
+		m_camStarting = true;
+		m_camFramesSent = 0;
+		m_camFramesCaptured = 0;
+		m_camFramesRaw = 0;
+
+		// 6) 启动摄像头采集（QVideoProbe 获取帧）
+		if (!m_camera) {
+			m_camera = new QCamera(cams.first(), this);
+
+			// 输出一些状态/错误，便于定位“无帧”到底是权限/占用还是后端问题
+			connect(m_camera, &QCamera::stateChanged, this, [this](QCamera::State st) {
+				TAC_OdsLine(QStringLiteral("SRT_CAM QCamera stateChanged=%1").arg(int(st)));
+			});
+			connect(m_camera, &QCamera::statusChanged, this, [this](QCamera::Status st) {
+				TAC_OdsLine(QStringLiteral("SRT_CAM QCamera statusChanged=%1").arg(int(st)));
+			});
+			connect(m_camera, QOverload<QCamera::Error>::of(&QCamera::error), this, [this](QCamera::Error e) {
+				TAC_OdsLine(QStringLiteral("SRT_CAM QCamera error=%1 errStr=%2").arg(int(e)).arg(m_camera ? m_camera->errorString() : QString()));
+			});
+
+			// 关键：不要“强行指定” preview format，否则很容易像你这台机器一样报：
+			// Failed to configure preview format。改为：从 supportedViewfinderSettings 里挑一个最合适的。
+			const QList<QCameraViewfinderSettings> supported = m_camera->supportedViewfinderSettings();
+			TAC_OdsLine(QStringLiteral("SRT_CAM supportedViewfinderSettings count=%1").arg(supported.size()));
+
+			auto isConvertible = [](QVideoFrame::PixelFormat pf) -> bool {
+				return QVideoFrame::imageFormatFromPixelFormat(pf) != QImage::Format_Invalid;
+			};
+
+			int bestScore = -1;
+			QCameraViewfinderSettings best;
+			bool hasBest = false;
+
+			for (const QCameraViewfinderSettings& s : supported) {
+				const QSize r = s.resolution();
+				const QVideoFrame::PixelFormat pf = s.pixelFormat();
+				int score = 0;
+
+				// 优先选能直接转 QImage 的像素格式（RGB32/ARGB32 等）
+				if (isConvertible(pf)) score += 1000;
+
+				// 分辨率尽量贴近 640x480（但不强制）
+				if (r.isValid()) {
+					const int dx = qAbs(r.width() - 640);
+					const int dy = qAbs(r.height() - 480);
+					score += qMax(0, 500 - (dx + dy));
+				}
+
+				// 帧率尽量贴近 25
+				const qreal minFps = s.minimumFrameRate();
+				const qreal maxFps = s.maximumFrameRate();
+				if (minFps > 0 && maxFps > 0) {
+					const qreal mid = (minFps + maxFps) * 0.5;
+					const int df = int(qAbs(mid - 25.0));
+					score += qMax(0, 200 - df * 10);
+				}
+
+				if (score > bestScore) {
+					bestScore = score;
+					best = s;
+					hasBest = true;
+				}
+			}
+
+			if (hasBest) {
+				m_camera->setViewfinderSettings(best);
+				TAC_OdsLine(QStringLiteral("SRT_CAM choose viewfinder: %1x%2 fps[%3,%4] pf=%5 convertible=%6")
+					.arg(best.resolution().width())
+					.arg(best.resolution().height())
+					.arg(best.minimumFrameRate())
+					.arg(best.maximumFrameRate())
+					.arg(int(best.pixelFormat()))
+					.arg(isConvertible(best.pixelFormat()) ? 1 : 0));
+			} else {
+				// 少数设备可能返回空列表，退回默认配置
+				TAC_OdsLine(QStringLiteral("SRT_CAM supportedViewfinderSettings 为空，使用设备默认 preview format"));
+			}
+		}
+
+		// 关键：设置 viewfinder surface，让相机真正开始输出帧（并且可绕过 QVideoProbe 不回调的问题）
+		if (!m_camSurface) {
+			m_camSurface = new TacCameraSurface(this);
+		}
+		m_camera->setViewfinder(m_camSurface);
+		TAC_OdsLine(QStringLiteral("SRT_CAM setViewfinder(surface) 完成"));
+
+		if (!m_videoProbe) {
+			m_videoProbe = new QVideoProbe(this);
+			connect(m_videoProbe, &QVideoProbe::videoFrameProbed, this, [this](const QVideoFrame& frame) {
+				handleCameraFrame(frame, QStringLiteral("probe"));
+			});
+		}
+		// 使用 QMediaObject 重载，避免 Qt5 下重载歧义
+		if (!m_videoProbe->setSource(static_cast<QMediaObject*>(m_camera))) {
+			TAC_OdsLine(QStringLiteral("SRT_CAM QVideoProbe::setSource 失败"));
+			stopAudioCapture();
+			QMessageBox::warning(this, QString::fromUtf8(u8"提示"), QString::fromUtf8(u8"摄像头探针绑定失败（QVideoProbe::setSource失败）"));
+			return;
+		}
+		TAC_OdsLine(QStringLiteral("SRT_CAM QVideoProbe::setSource 成功，启动 QCamera"));
+		m_camera->start();
+
+		btnCam->setText(QString::fromUtf8(u8"停止摄像头"));
+		btnCam->setStyleSheet("background-color: #C0392B; color: white; padding: 4px 8px; border: none;");
+		qDebug() << "摄像头推流启动:" << streamName << "audio:" << audioStarted;
+
+		// 兜底：如果 8 秒内没有采集到任何帧，自动停止并提示（避免用户无反馈）
+		// 注意：我们现在是“拿到首帧后才开始推流”，所以这里判断 captured 而不是 sent，避免误判。
+		QTimer::singleShot(8000, this, [this]() {
+			if (m_btnCam && m_btnCam->text() == QString::fromUtf8(u8"停止摄像头") && m_camFramesRaw <= 0) {
+				TAC_OdsLine(QStringLiteral("SRT_CAM 兜底触发：8秒内未采集到任何帧，自动停止"));
+				stopCameraStreaming(m_btnCam);
+				QMessageBox::warning(this, QString::fromUtf8(u8"提示"), QString::fromUtf8(u8"未获取到摄像头画面数据，请检查摄像头权限/设备是否被占用"));
+			}
+		});
+	}
+
+	void stopCameraStreaming(QPushButton* btnCam)
+	{
+		m_camStarting = false;
+		m_camFramesSent = 0;
+		m_camFramesCaptured = 0;
+		m_camFramesRaw = 0;
+
+		if (m_camera) {
+			m_camera->stop();
+		}
+		if (m_videoProbe) {
+			// Qt5 下 setSource 有多个重载，nullptr 可能导致重载歧义
+			m_videoProbe->setSource(static_cast<QMediaObject*>(nullptr));
+		}
+		if (m_camSurface) {
+			m_camSurface->stop();
+		}
+		stopAudioCapture();
+		if (m_camStreamer) {
+			m_camStreamer->stop();
+		}
+		if (btnCam) {
+			btnCam->setText(QString::fromUtf8(u8"摄像头"));
+			btnCam->setStyleSheet("background-color: #2D2E2D; color: white; padding: 4px 8px; border: none;");
 		}
 	}
 
@@ -3874,6 +4220,17 @@ private:
 	//bool isLocalRecording = false;
 	// RTMP 推流器
 	RtmpMediaStreamer* m_rtmpStreamer = nullptr;
+	// 摄像头 RTMP 音视频推流器（H264 + 可选 AAC）
+	RtmpAvStreamer* m_camStreamer = nullptr;
+	// 摄像头 SRT 推流：避免连接建立后无数据导致服务端超时，缓存首帧并在 started 后立刻发送
+	bool m_camStarting = false;
+	bool m_camStartedSignalConnected = false;
+	int m_camFramesRaw = 0;
+	int m_camFramesCaptured = 0;
+	int m_camFramesSent = 0;
+	QCamera* m_camera = nullptr;
+	QVideoProbe* m_videoProbe = nullptr;
+	TacCameraSurface* m_camSurface = nullptr;
 	QVector<GroupMemberInfo>  m_groupMemberInfo;
 	QTableWidget* seatTable = nullptr; // 座位表格
 	ArrangeSeatDialog* arrangeSeatDlg = nullptr; // 排座对话框

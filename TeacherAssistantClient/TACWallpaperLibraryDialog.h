@@ -122,4 +122,6 @@ private:
 	WallpaperInfo m_downloadingWallpaper; // 正在下载的壁纸信息
 	bool m_downloadAndSetFlag; // 下载后是否设置为壁纸的标志
 	TAHttpHandler* m_httpHandler; // HTTP处理器（用于获取壁纸库列表）
+	bool m_wallpaperLibraryFetchInFlight = false; // 是否正在请求壁纸库
+	bool m_wallpaperLibraryFetchedOnce = false;   // 是否至少成功请求过一次（哪怕返回空）
 };

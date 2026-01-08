@@ -283,12 +283,19 @@ void TACWallpaperLibraryDialog::fetchWallpaperLibraryFromServer()
     QString url = QString("http://47.100.126.194:5000/wallpaper-library");
     
     if (m_httpHandler) {
+        if (m_wallpaperLibraryFetchInFlight) {
+            return; // 避免并发/死循环重复请求
+        }
+        m_wallpaperLibraryFetchInFlight = true;
         m_httpHandler->get(url);
     }
 }
 
 void TACWallpaperLibraryDialog::onWallpaperListReceived(const QString& content)
 {
+    m_wallpaperLibraryFetchInFlight = false;
+    m_wallpaperLibraryFetchedOnce = true;
+
     // 解析服务器返回的壁纸列表
     QJsonDocument doc = QJsonDocument::fromJson(content.toUtf8());
     if (!doc.isObject()) {
@@ -332,6 +339,7 @@ void TACWallpaperLibraryDialog::onWallpaperListReceived(const QString& content)
 
 void TACWallpaperLibraryDialog::onWallpaperListFailed(const QString& content)
 {
+    m_wallpaperLibraryFetchInFlight = false;
     qWarning() << "Failed to fetch wallpaper library:" << content;
     showStyledMessage(QString::fromUtf8(u8"错误"), 
         QString::fromUtf8(u8"获取壁纸库列表失败：%1").arg(content), true);
@@ -348,10 +356,22 @@ void TACWallpaperLibraryDialog::initWallpaperLibrary()
         delete item;
     }
     
-    // 如果壁纸库为空，从服务器获取
+    // 如果壁纸库为空：只拉取一次，避免服务端返回空数组时形成死循环
     if (m_wallpaperLibrary.isEmpty()) {
-        fetchWallpaperLibraryFromServer();
-        return; // 等待服务器响应后再显示
+        if (!m_wallpaperLibraryFetchedOnce && !m_wallpaperLibraryFetchInFlight) {
+            fetchWallpaperLibraryFromServer();
+            QLabel* loading = new QLabel(QString::fromUtf8(u8"正在加载壁纸库..."), m_wallpaperLibraryPage);
+            loading->setAlignment(Qt::AlignCenter);
+            loading->setStyleSheet("color: #BBBBBB; font-size: 16px;");
+            m_wallpaperLibraryGridLayout->addWidget(loading, 0, 0, 1, 4, Qt::AlignCenter);
+            return;
+        }
+
+        QLabel* empty = new QLabel(QString::fromUtf8(u8"壁纸库暂无内容"), m_wallpaperLibraryPage);
+        empty->setAlignment(Qt::AlignCenter);
+        empty->setStyleSheet("color: #BBBBBB; font-size: 16px;");
+        m_wallpaperLibraryGridLayout->addWidget(empty, 0, 0, 1, 4, Qt::AlignCenter);
+        return;
     }
     
     // 添加壁纸库中的壁纸

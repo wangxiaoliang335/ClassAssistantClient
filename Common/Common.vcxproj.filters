@@ -262,6 +262,9 @@
     <ClCompile Include="RtmpMediaStreamer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="RtmpAvStreamer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="NormalGroupDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -481,6 +484,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="RtmpMediaStreamer.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="RtmpAvStreamer.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="CellCommentWidget.h">
