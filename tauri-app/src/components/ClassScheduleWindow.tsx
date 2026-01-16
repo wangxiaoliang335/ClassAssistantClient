@@ -2,8 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { invoke } from '@tauri-apps/api/core';
-import { Minus, X, Square, Copy, MessageCircle, Calendar, Users, BookOpen, Shuffle, Clock, Grid, LayoutDashboard, Layers, Award, Power, Mic, FileSpreadsheet, BarChart2, ArrowUpDown, Bell } from 'lucide-react';
-import { useWebSocket } from '../context/WebSocketContext';
+import { Minus, X, Square, Copy, MessageCircle, Calendar, Users, BookOpen, Shuffle, Clock, Grid, LayoutDashboard, Layers, Award, Mic, FileSpreadsheet, BarChart2, ArrowUpDown, Bell } from 'lucide-react';
 import { getTIMGroups, isSDKReady, loginTIM } from '../utils/tim';
 import RandomCallModal from './modals/RandomCallModal';
 import HomeworkModal from './modals/HomeworkModal';
@@ -29,9 +28,6 @@ const ClassScheduleWindow = () => {
     const { groupclassId } = useParams();
     const [isMaximized, setIsMaximized] = useState(false);
     const [isClassLogin, setIsClassLogin] = useState(false);
-
-    // WebSocket
-    const { sendMessage: sendSignal, isConnected: isWSConnected } = useWebSocket();
 
     // View State
     const [currentView, setCurrentView] = useState<'overview' | 'seatmap'>('overview');
@@ -340,48 +336,6 @@ const ClassScheduleWindow = () => {
 
     // Note: handlePublishHomework removed - HomeworkModal now handles WebSocket messaging internally
 
-    const handleRemoteShutdown = async () => {
-        if (confirm("确定要关闭当前班级设备吗？此操作将关闭计算机。")) {
-            try {
-                // Construct logic from ScheduleDialog.h:2658
-                const userInfoStr = localStorage.getItem('user_info');
-                let userInfo = {} as any;
-                if (userInfoStr) {
-                    try { userInfo = JSON.parse(userInfoStr); } catch (e) { }
-                }
-
-                if (!groupclassId || !userInfo.teacher_unique_id) {
-                    alert("信息不完整，无法发送关机指令");
-                    return;
-                }
-
-                const payload = {
-                    type: "remote_shutdown",
-                    action: "shutdown",
-                    class_id: "", // TODO: Need class_id, but current param is groupclassId (which is group_id). 
-                    // Qt checks m_classid. In frontend we only have groupclassId from URL (which is groupId).
-                    // We might need to fetch class info to get class_id, or maybe groupclassId IS adequate or mapped.
-                    // For now use groupclassId as group_id.
-                    group_id: groupclassId,
-                    sender_id: userInfo.teacher_unique_id,
-                    sender_name: userInfo.strName || userInfo.name || "Teacher",
-                    timestamp: Math.floor(Date.now() / 1000)
-                };
-
-                // The socket expects "to:{TargetId}:{JSON}"
-                // C++: "to:%1:%2".arg(m_unique_group_id, compactJson)
-                const msg = `to:${groupclassId}:${JSON.stringify(payload)}`; /* No extra spaces to match Compact JSON */
-
-                sendSignal(msg);
-                alert("关机指令已发送");
-
-            } catch (e) {
-                console.error(e);
-                alert("关机指令发送失败: " + String(e));
-            }
-        }
-    };
-
     return (
         <div
             className="h-screen w-screen bg-[#f8fbff] flex flex-col overflow-hidden border border-gray-300 select-none text-gray-700 font-sans relative transition-all duration-500 bg-cover bg-center"
@@ -548,13 +502,6 @@ const ClassScheduleWindow = () => {
                                     <Layers size={14} /> 快捷工具
                                 </h3>
                                 <div className="grid grid-cols-2 gap-2 flex-1 content-start">
-                                    <button onClick={handleOpenHomework} className="h-16 bg-white rounded-xl border border-gray-100 hover:shadow-sm hover:border-purple-200 transition-all flex items-center gap-3 px-3 group">
-                                        <div className="p-2 rounded-lg bg-purple-50 text-purple-500 group-hover:bg-purple-100 transition-all">
-                                            <BookOpen size={16} />
-                                        </div>
-                                        <span className="text-xs font-medium text-gray-600">作业管理</span>
-                                    </button>
-
                                     <button onClick={handleOpenIntercom} className="h-16 bg-white rounded-xl border border-gray-100 hover:shadow-sm hover:border-red-200 transition-all flex items-center gap-3 px-3 group">
                                         <div className="p-2 rounded-lg bg-red-50 text-red-500 group-hover:bg-red-100 transition-all">
                                             <Mic size={16} />
@@ -588,16 +535,6 @@ const ClassScheduleWindow = () => {
                                             <Award size={16} />
                                         </div>
                                         <span className="text-xs font-medium text-gray-600">小组评价</span>
-                                    </button>
-
-                                    <button onClick={handleRemoteShutdown} className="h-16 bg-white rounded-xl border border-gray-100 hover:shadow-sm hover:border-red-200 transition-all flex items-center gap-3 px-3 group relative">
-                                        <div className="absolute top-2 right-2">
-                                            <div className={`w-1.5 h-1.5 rounded-full ${isWSConnected ? 'bg-green-500' : 'bg-red-400'}`}></div>
-                                        </div>
-                                        <div className="p-2 rounded-lg bg-red-50 text-red-500 group-hover:bg-red-100 transition-all">
-                                            <Power size={16} />
-                                        </div>
-                                        <span className="text-xs font-medium text-gray-600">远程开机</span>
                                     </button>
 
                                     <button onClick={() => setIsStudentImportOpen(true)} className="h-16 bg-white rounded-xl border border-gray-100 hover:shadow-sm hover:border-blue-200 transition-all flex items-center gap-3 px-3 group">

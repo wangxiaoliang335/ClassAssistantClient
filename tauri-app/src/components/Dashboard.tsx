@@ -189,7 +189,7 @@ const Dashboard = ({ userInfo }: DashboardProps) => {
         }
     };
 
-    const handleToolClick = (toolId: string) => {
+    const handleToolClick = async (toolId: string) => {
         if (toolId === 'schedule') {
             setActiveApp('schedule');
         } else if (toolId === 'create_class_group') {
@@ -200,6 +200,16 @@ const Dashboard = ({ userInfo }: DashboardProps) => {
             setShowSearchAdd(true);
         } else if (toolId === 'school_info') {
             setShowSchoolInfo(true);
+        } else if (toolId === 'file_manager') {
+            try {
+                const { createNewBox } = await import('../utils/DesktopManager');
+                const box = await createNewBox();
+                await invoke('open_file_box_window', { boxId: box.id });
+                // Optional: Minimize main window if desired, or keep as is
+            } catch (e) {
+                console.error(e);
+                alert('创建文件盒子失败');
+            }
         } else {
             console.log('Tool clicked:', toolId);
         }

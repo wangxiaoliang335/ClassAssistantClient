@@ -1,5 +1,6 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 use tauri::Manager;
+use serde::Serialize;
 
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -284,6 +285,34 @@ async fn open_chat_window(app: tauri::AppHandle, groupclass_id: String) -> Resul
     )
     .title("班级群")
     .inner_size(800.0, 600.0)
+    .decorations(false)
+    .transparent(true);
+
+    match builder.build() {
+        Ok(_) => Ok(()),
+        Err(e) => Err(format!("Failed to create window: {}", e)),
+    }
+}
+
+#[tauri::command]
+async fn open_file_box_window(app: tauri::AppHandle, box_id: String) -> Result<(), String> {
+    println!("Backend: Opening file box window for ID: {}", box_id);
+
+    let window_label = format!("file_box_{}", box_id);
+    let url = format!("/file-box/{}", box_id);
+
+    if let Some(window) = app.get_webview_window(&window_label) {
+        let _ = window.set_focus();
+        return Ok(());
+    }
+
+    let builder = tauri::WebviewWindowBuilder::new(
+        &app,
+        window_label,
+        tauri::WebviewUrl::App(url.into()),
+    )
+    .title("文件盒子")
+    .inner_size(900.0, 650.0)
     .decorations(false)
     .transparent(true);
 
@@ -1324,10 +1353,368 @@ async fn update_group_settings(group_id: String, setting_name: String, value: i3
     Ok(text)
 }
 
+#[tauri::command]
+fn get_system_icon(path: String, size: i32) -> Result<String, String> {
+    #[cfg(target_os = "windows")]
+    {
+        use windows::core::PCWSTR;
+        use windows::Win32::UI::Shell::{SHGetFileInfoW, SHGFI_ICON, SHGFI_LARGEICON, SHGFI_SMALLICON, SHFILEINFOW};
+        use windows::Win32::UI::WindowsAndMessaging::{DestroyIcon, GetIconInfo};
+        use windows::Win32::Graphics::Gdi::{BITMAP, CreateCompatibleDC, SelectObject, DeleteDC, DeleteObject, GetDIBits, BITMAPINFOHEADER, DIB_RGB_COLORS, GetObjectW};
+        use std::os::windows::ffi::OsStrExt;
+        use base64::{Engine as _, engine::general_purpose};
+        use image::{RgbaImage, ImageFormat};
+        use std::io::Cursor;
+
+        let path_u16: Vec<u16> = std::ffi::OsStr::new(&path).encode_wide().chain(Some(0)).collect();
+        let mut shfi = SHFILEINFOW::default();
+        
+        let flags = if size > 16 {
+            SHGFI_ICON | SHGFI_LARGEICON
+        } else {
+            SHGFI_ICON | SHGFI_SMALLICON
+        };
+
+        unsafe {
+            let result = SHGetFileInfoW(
+                PCWSTR(path_u16.as_ptr()),
+                windows::Win32::Storage::FileSystem::FILE_FLAGS_AND_ATTRIBUTES::default(),
+                Some(&mut shfi),
+                std::mem::size_of::<SHFILEINFOW>() as u32,
+                flags,
+            );
+
+            if result == 0 || shfi.hIcon.is_invalid() {
+                return Err("Failed to get icon info".into());
+            }
+
+            let hicon = shfi.hIcon;
+            let mut icon_info = windows::Win32::UI::WindowsAndMessaging::ICONINFO::default();
+            if GetIconInfo(hicon, &mut icon_info).is_err() {
+                let _ = DestroyIcon(hicon);
+                return Err("Failed to get icon info details".into());
+            }
+
+            // Get bitmap dimensions
+            let mut bmp = BITMAP::default();
+            GetObjectW(icon_info.hbmColor, std::mem::size_of::<BITMAP>() as i32, Some(&mut bmp as *mut _ as *mut _));
+            
+            let width = bmp.bmWidth;
+            let height = bmp.bmHeight;
+
+            let hdc = CreateCompatibleDC(None);
+            let mut bmi = windows::Win32::Graphics::Gdi::BITMAPINFO {
+                bmiHeader: BITMAPINFOHEADER {
+                    biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+                    biWidth: width,
+                    biHeight: -height, // top-down
+                    biPlanes: 1,
+                    biBitCount: 32,
+                    biCompression: 0, // BI_RGB
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut buffer = vec![0u8; (width * height * 4) as usize];
+            let old_obj = SelectObject(hdc, icon_info.hbmColor);
+            
+            GetDIBits(
+                hdc,
+                icon_info.hbmColor,
+                0,
+                height as u32,
+                Some(buffer.as_mut_ptr() as *mut _),
+                &mut bmi,
+                DIB_RGB_COLORS,
+            );
+
+            SelectObject(hdc, old_obj);
+            DeleteDC(hdc);
+            let _ = DeleteObject(icon_info.hbmColor);
+            let _ = DeleteObject(icon_info.hbmMask);
+            let _ = DestroyIcon(hicon);
+
+            // BGRA to RGBA
+            for chunk in buffer.chunks_mut(4) {
+                chunk.swap(0, 2);
+            }
+
+            let img = RgbaImage::from_raw(width as u32, height as u32, buffer)
+                .ok_or("Failed to create image from raw buffer")?;
+            
+            let mut cursor = Cursor::new(Vec::new());
+            img.write_to(&mut cursor, ImageFormat::Png).map_err(|e| e.to_string())?;
+            
+            Ok(format!("data:image/png;base64,{}", general_purpose::STANDARD.encode(cursor.into_inner())))
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Err("Not implemented for this OS".into())
+    }
+}
+
+#[tauri::command]
+fn create_file_box(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    use tauri::path::BaseDirectory;
+
+    let base_dir = app
+        .path()
+        .resolve("EduDesk/Boxes", BaseDirectory::Document)
+        .map_err(|e| e.to_string())?;
+
+    std::fs::create_dir_all(&base_dir).map_err(|e| e.to_string())?;
+
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_millis();
+    let box_id = format!("box_{}", ts);
+    let box_path = base_dir.join(&box_id);
+    std::fs::create_dir_all(&box_path).map_err(|e| e.to_string())?;
+
+    Ok(serde_json::json!({
+        "id": box_id,
+        "path": box_path.to_string_lossy().to_string(),
+        "name": "新建盒子"
+    }))
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FileItem {
+    name: String,
+    path: String,
+    is_dir: bool,
+    size: Option<u64>,
+}
+
+#[tauri::command]
+fn list_box_files(app: tauri::AppHandle, box_id: String) -> Result<Vec<FileItem>, String> {
+    use tauri::path::BaseDirectory;
+
+    let base_dir = app
+        .path()
+        .resolve(format!("EduDesk/Boxes/{}", box_id), BaseDirectory::Document)
+        .map_err(|e| e.to_string())?;
+
+    let mut items = Vec::new();
+    let entries = std::fs::read_dir(&base_dir).map_err(|e| e.to_string())?;
+    for entry in entries {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+        let name = entry
+            .file_name()
+            .to_string_lossy()
+            .to_string();
+        let metadata = entry.metadata().map_err(|e| e.to_string())?;
+        let is_dir = metadata.is_dir();
+        let size = if is_dir { None } else { Some(metadata.len()) };
+        items.push(FileItem {
+            name,
+            path: path.to_string_lossy().to_string(),
+            is_dir,
+            size,
+        });
+    }
+
+    Ok(items)
+}
+
+#[tauri::command]
+fn create_box_folder(app: tauri::AppHandle, box_id: String, folder_name: String) -> Result<(), String> {
+    use tauri::path::BaseDirectory;
+
+    let base_dir = app
+        .path()
+        .resolve(format!("EduDesk/Boxes/{}", box_id), BaseDirectory::Document)
+        .map_err(|e| e.to_string())?;
+    let target = base_dir.join(folder_name);
+    std::fs::create_dir_all(&target).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn import_files_to_box(app: tauri::AppHandle, box_id: String, paths: Vec<String>) -> Result<(), String> {
+    use std::path::{Path, PathBuf};
+    use std::time::{SystemTime, UNIX_EPOCH};
+    use tauri::path::BaseDirectory;
+
+    fn unique_dest(dir: &Path, name: &str) -> PathBuf {
+        let mut candidate = dir.join(name);
+        if !candidate.exists() {
+            return candidate;
+        }
+        let ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        let (stem, ext) = match name.rsplit_once('.') {
+            Some((s, e)) => (s.to_string(), format!(".{}", e)),
+            None => (name.to_string(), "".to_string()),
+        };
+        candidate = dir.join(format!("{}_{}{}", stem, ts, ext));
+        candidate
+    }
+
+    fn copy_dir_all(src: &Path, dst: &Path) -> std::io::Result<()> {
+        std::fs::create_dir_all(dst)?;
+        for entry in std::fs::read_dir(src)? {
+            let entry = entry?;
+            let file_type = entry.file_type()?;
+            let dest_path = dst.join(entry.file_name());
+            if file_type.is_dir() {
+                copy_dir_all(&entry.path(), &dest_path)?;
+            } else {
+                std::fs::copy(entry.path(), dest_path)?;
+            }
+        }
+        Ok(())
+    }
+
+    let base_dir = app
+        .path()
+        .resolve(format!("EduDesk/Boxes/{}", box_id), BaseDirectory::Document)
+        .map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&base_dir).map_err(|e| e.to_string())?;
+
+    for src in paths {
+        let src_path = PathBuf::from(&src);
+        if !src_path.exists() {
+            continue;
+        }
+        let name = src_path.file_name().and_then(|n| n.to_str()).unwrap_or("item");
+        let dest_path = unique_dest(&base_dir, name);
+
+        if src_path.is_dir() {
+            // Try rename first, fallback to copy+remove
+            if std::fs::rename(&src_path, &dest_path).is_err() {
+                copy_dir_all(&src_path, &dest_path).map_err(|e| e.to_string())?;
+                std::fs::remove_dir_all(&src_path).map_err(|e| e.to_string())?;
+            }
+        } else {
+            if std::fs::rename(&src_path, &dest_path).is_err() {
+                std::fs::copy(&src_path, &dest_path).map_err(|e| e.to_string())?;
+                std::fs::remove_file(&src_path).map_err(|e| e.to_string())?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+fn start_file_drag(paths: Vec<String>) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::ffi::OsStr;
+        use std::os::windows::ffi::OsStrExt;
+        use std::path::Path;
+        use windows::core::{PCWSTR, HRESULT};
+        use windows::Win32::Foundation::BOOL;
+        use windows::Win32::System::Com::{CoInitializeEx, CoTaskMemFree, CoUninitialize, COINIT_APARTMENTTHREADED};
+        use windows::Win32::System::Ole::{DoDragDrop, DROPEFFECT, DROPEFFECT_COPY, DROPEFFECT_MOVE};
+        use windows::Win32::System::Com::IDataObject;
+        use windows::Win32::System::SystemServices::MODIFIERKEYS_FLAGS;
+        use windows::Win32::UI::Shell::{ILFindLastID, SHCreateDataObject, SHParseDisplayName};
+        use windows::Win32::UI::Shell::Common::ITEMIDLIST;
+        use windows::Win32::System::Ole::IDropSource;
+
+        #[windows::core::implement(IDropSource)]
+        struct DropSource;
+        #[allow(non_snake_case)]
+        impl windows::Win32::System::Ole::IDropSource_Impl for DropSource {
+            fn QueryContinueDrag(&self, fEscapePressed: BOOL, grfKeyState: MODIFIERKEYS_FLAGS) -> HRESULT {
+                const DRAGDROP_S_CANCEL: HRESULT = HRESULT(0x00040101);
+                const DRAGDROP_S_DROP: HRESULT = HRESULT(0x00040100);
+                const MK_LBUTTON: u32 = 0x0001;
+                if fEscapePressed.as_bool() {
+                    return DRAGDROP_S_CANCEL;
+                }
+                if (grfKeyState.0 & MK_LBUTTON) == 0 {
+                    return DRAGDROP_S_DROP;
+                }
+                HRESULT(0)
+            }
+            fn GiveFeedback(&self, _dwEffect: DROPEFFECT) -> HRESULT {
+                const DRAGDROP_S_USEDEFAULTCURSORS: HRESULT = HRESULT(0x00040102);
+                DRAGDROP_S_USEDEFAULTCURSORS
+            }
+        }
+
+        if paths.is_empty() {
+            return Err("未提供拖拽路径".into());
+        }
+
+        let first_path = Path::new(&paths[0]);
+        let parent = first_path.parent().ok_or("无法获取父目录")?;
+        for p in &paths[1..] {
+            let cur = Path::new(p);
+            let cur_parent = cur.parent().ok_or("无法获取父目录")?;
+            if cur_parent != parent {
+                return Err("暂不支持跨目录多选拖拽".into());
+            }
+        }
+
+        unsafe {
+            CoInitializeEx(None, COINIT_APARTMENTTHREADED).map_err(|e| e.message().to_string())?;
+        }
+
+        let parent_wide: Vec<u16> = OsStr::new(parent.as_os_str()).encode_wide().chain(Some(0)).collect();
+        let mut pidl_folder: *mut ITEMIDLIST = std::ptr::null_mut();
+        let mut pidl_full_list: Vec<*mut ITEMIDLIST> = Vec::new();
+        let mut child_list: Vec<*const ITEMIDLIST> = Vec::new();
+
+        unsafe {
+            SHParseDisplayName(PCWSTR(parent_wide.as_ptr()), None, &mut pidl_folder, 0, None)
+                .map_err(|e| e.message().to_string())?;
+            for full_path in &paths {
+                let full_wide: Vec<u16> =
+                    OsStr::new(full_path.as_str()).encode_wide().chain(Some(0)).collect();
+                let mut pidl_full: *mut ITEMIDLIST = std::ptr::null_mut();
+                SHParseDisplayName(PCWSTR(full_wide.as_ptr()), None, &mut pidl_full, 0, None)
+                    .map_err(|e| e.message().to_string())?;
+                let child = ILFindLastID(pidl_full) as *const ITEMIDLIST;
+                pidl_full_list.push(pidl_full);
+                child_list.push(child);
+            }
+
+            let data_obj: IDataObject = SHCreateDataObject(
+                Some(pidl_folder as *const ITEMIDLIST),
+                Some(&child_list),
+                None,
+            )
+            .map_err(|e| e.message().to_string())?;
+
+            let drop_source: IDropSource = DropSource.into();
+            let mut effect = DROPEFFECT_COPY | DROPEFFECT_MOVE;
+            let _ = DoDragDrop(&data_obj, &drop_source, effect, &mut effect);
+
+            CoTaskMemFree(Some(pidl_folder as _));
+            for pidl in pidl_full_list {
+                CoTaskMemFree(Some(pidl as _));
+            }
+            CoUninitialize();
+        }
+
+        return Ok(());
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = paths;
+        Err("start_file_drag 仅支持 Windows".into())
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
     .plugin(tauri_plugin_opener::init())
+    .plugin(tauri_plugin_fs::init())
+    .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
             greet, 
             login,
@@ -1344,6 +1731,10 @@ pub fn run() {
             get_user_sig, 
             open_class_window, 
             open_chat_window, 
+            open_file_box_window,
+            get_system_icon,
+            list_box_files,
+            import_files_to_box,
             get_group_members,
             fetch_seat_map,
             save_seat_map,
@@ -1389,10 +1780,13 @@ pub fn run() {
             delete_teacher,
             update_class_avatar,
             update_group_settings,
+            create_file_box,
+            create_box_folder,
             save_seat_arrangement,
             get_student_scores,
             get_group_scores,
-            exit_app
+            exit_app,
+            start_file_drag
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
