@@ -10,7 +10,7 @@ import UserInfoModal from './modals/UserInfoModal';
 import SchoolInfoModal from './modals/SchoolInfoModal';
 import ClassTextMessageWindow from './ClassTextMessageWindow';
 import { loginTIM, getTIMGroups } from '../utils/tim';
-import { connectWS } from '../utils/websocket';
+import { connectWS, sendMessageWS } from '../utils/websocket';
 
 import { invoke } from '@tauri-apps/api/core';
 
@@ -130,7 +130,7 @@ const Dashboard = ({ userInfo }: DashboardProps) => {
         };
 
         window.addEventListener('notification-setting-changed', handleNotificationSettingChange as EventListener);
-        
+
         // 从服务器响应中获取状态（通过ClassInfoModal加载时会触发事件）
         // 这里不依赖localStorage，因为状态应该从服务器获取
 
@@ -162,6 +162,55 @@ const Dashboard = ({ userInfo }: DashboardProps) => {
                 if (msg.type === 'notification' && msg.class_id === classCode && receiveNotification) {
                     console.log('[Dashboard] Received notification, opening text message window');
                     setShowTextMessageWindow(true);
+                } else if (msg.type === "monitor") {
+                    console.log("[Dashboard] Received Monitor Command:", msg);
+                    const action = msg.action;
+                    const ts = Math.floor(Date.now() / 1000);
+                    // Use the group_id from the received message (from teacher), fallback to classCode
+                    const targetGroupId = msg.group_id || classCode;
+
+                    if (action === "start_stream") {
+                        console.log("[Dashboard] Starting Remote Monitoring...");
+                        const streamName = `live/${targetGroupId}_${ts}`;
+                        const pullUrl = `srt://47.100.126.194:10080?streamid=#!::r=${streamName},m=publish`;
+
+                        invoke('start_stream', { pullUrl: pullUrl })
+                            .then(() => console.log("[Dashboard] Streaming started successfully"))
+                            .catch(err => console.error("[Dashboard] Failed to start stream:", err));
+
+                        const response: any = {
+                            type: "camera_stream",
+                            action: "start_pull",
+                            class_id: classCode,
+                            group_id: targetGroupId,  // Use the same group_id from teacher's request
+                            stream_name: streamName,
+                            pull_url: pullUrl,
+                            sender_id: currentUserInfo?.user_id || "",
+                            sender_name: currentUserInfo?.name || "Class Terminal",
+                            ts: ts
+                        };
+                        const wsPayload = JSON.stringify(response);
+                        const wsMessage = wsPayload.startsWith('to:') ? wsPayload : `to:${targetGroupId}:${wsPayload}`;
+                        sendMessageWS(wsMessage);
+
+                    } else if (action === "stop_stream") {
+                        console.log("[Dashboard] Stopping Remote Monitoring...");
+                        invoke('stop_stream')
+                            .then(() => console.log("[Dashboard] Streaming stopped successfully"))
+                            .catch(err => console.error("[Dashboard] Failed to stop stream:", err));
+
+                        const response: any = {
+                            type: "camera_stream",
+                            action: "stop_pull",
+                            class_id: classCode,
+                            group_id: targetGroupId,  // Use the same group_id from teacher's request
+                            sender_id: currentUserInfo?.user_id || "",
+                            ts: ts
+                        };
+                        const wsPayload = JSON.stringify(response);
+                        const wsMessage = wsPayload.startsWith('to:') ? wsPayload : `to:${targetGroupId}:${wsPayload}`;
+                        sendMessageWS(wsMessage);
+                    }
                 }
             } catch (e) {
                 // 忽略解析错误
@@ -273,7 +322,7 @@ const Dashboard = ({ userInfo }: DashboardProps) => {
                     {activeApp === 'folder' && (
                         <div className="h-full flex flex-col">
                             <h2 className="text-xl font-semibold text-gray-800 mb-6 px-2">桌面管理</h2>
-                            
+
                             <div className="grid grid-cols-4 gap-4">
                                 {/* Class Group (for class login) - shown as first item */}
                                 {currentUserInfo?.loginType === 'class' && (
@@ -290,10 +339,10 @@ const Dashboard = ({ userInfo }: DashboardProps) => {
                                         >
                                             <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl mb-3 shadow-sm bg-indigo-100 text-indigo-600 group-hover:scale-110 transition-transform duration-300 overflow-hidden">
                                                 {classGroup.face_url ? (
-                                                    <img 
-                                                        src={classGroup.face_url} 
-                                                        alt="" 
-                                                        className="w-full h-full object-cover" 
+                                                    <img
+                                                        src={classGroup.face_url}
+                                                        alt=""
+                                                        className="w-full h-full object-cover"
                                                     />
                                                 ) : (
                                                     <span>👥</span>

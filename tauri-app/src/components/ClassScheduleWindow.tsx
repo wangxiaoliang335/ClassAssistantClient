@@ -4,6 +4,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { invoke } from '@tauri-apps/api/core';
 import { Minus, X, Square, Copy, MessageCircle, Calendar, Users, BookOpen, Shuffle, Clock, Grid, LayoutDashboard, Layers, Award, Mic, FileSpreadsheet, BarChart2, ArrowUpDown, Bell } from 'lucide-react';
 import { getTIMGroups, isSDKReady, loginTIM } from '../utils/tim';
+import { sendMessageWS } from '../utils/websocket';
 import RandomCallModal from './modals/RandomCallModal';
 import HomeworkModal from './modals/HomeworkModal';
 import CountdownModal from './modals/CountdownModal';
@@ -183,6 +184,83 @@ const ClassScheduleWindow = () => {
                     });
 
                     // Auto-open if important? Maybe just show badge.
+                } else if (msg.type === "monitor") {
+                    console.log("[ClassSchedule] Received Monitor Command:", msg);
+                    const action = msg.action;
+                    const senderId = msg.sender_id;
+                    const ts = Math.floor(Date.now() / 1000);
+                    // Use the group_id from the received message (from teacher), fallback to groupclassId
+                    const targetGroupId = msg.group_id || groupclassId;
+
+                    if (action === "start_stream") {
+                        console.log("[ClassSchedule] Starting Remote Monitoring...");
+
+                        // Construct Stream Name & Pull URL
+                        // StreamID format: #!::r=live/CLASSID_TS,m=publish
+                        const streamName = `live/${targetGroupId}_${ts}`;
+                        const pullUrl = `srt://47.100.126.194:10080?streamid=#!::r=${streamName},m=publish`;
+
+                        // Call Rust Backend to Start Streaming
+                        invoke('start_stream', { pullUrl: pullUrl })
+                            .then(() => console.log("[ClassSchedule] Streaming started successfully"))
+                            .catch(err => console.error("[ClassSchedule] Failed to start stream:", err));
+
+                        const response = {
+                            type: "camera_stream",
+                            action: "start_pull",
+                            class_id: groupclassId,
+                            group_id: targetGroupId,  // Use the same group_id from teacher's request
+                            stream_name: streamName,
+                            pull_url: pullUrl,
+                            sender_id: senderId,
+                            sender_name: "Class Terminal",
+                            ts: ts
+                        };
+
+                        // Try to get current user ID
+                        try {
+                            const uStr = localStorage.getItem('user_info');
+                            if (uStr) {
+                                const u = JSON.parse(uStr);
+                                if (u.user_id) response.sender_id = u.user_id;
+                                if (u.name) response.sender_name = u.name;
+                            }
+                        } catch (e) { }
+
+                        console.log("[ClassSchedule] Sending start_pull feedback:", response);
+                        const wsPayload = JSON.stringify(response);
+                        const wsMessage = wsPayload.startsWith('to:') ? wsPayload : `to:${targetGroupId}:${wsPayload}`;
+                        sendMessageWS(wsMessage);
+
+                    } else if (action === "stop_stream") {
+                        console.log("[ClassSchedule] Stopping Remote Monitoring...");
+
+                        // Call Rust Backend to Stop Streaming
+                        invoke('stop_stream')
+                            .then(() => console.log("[ClassSchedule] Streaming stopped successfully"))
+                            .catch(err => console.error("[ClassSchedule] Failed to stop stream:", err));
+
+                        const response = {
+                            type: "camera_stream",
+                            action: "stop_pull",
+                            class_id: groupclassId,
+                            group_id: targetGroupId,  // Use the same group_id from teacher's request
+                            sender_id: "",
+                            ts: ts
+                        };
+                        try {
+                            const uStr = localStorage.getItem('user_info');
+                            if (uStr) {
+                                const u = JSON.parse(uStr);
+                                if (u.user_id) response.sender_id = u.user_id;
+                            }
+                        } catch (e) { }
+
+                        console.log("[ClassSchedule] Sending stop_pull feedback:", response);
+                        const wsPayload = JSON.stringify(response);
+                        const wsMessage = wsPayload.startsWith('to:') ? wsPayload : `to:${targetGroupId}:${wsPayload}`;
+                        sendMessageWS(wsMessage);
+                    }
                 }
             } catch (e) {
                 console.error("[ClassSchedule] Error parsing WS message:", e);

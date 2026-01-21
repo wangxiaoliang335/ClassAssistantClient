@@ -1709,12 +1709,186 @@ fn start_file_drag(paths: Vec<String>) -> Result<(), String> {
     }
 }
 
+// Global state for ffmpeg process
+use std::sync::Mutex;
+use std::process::{Command as StdCommand, Child};
+
+struct StreamState {
+    process: Mutex<Option<Child>>,
+}
+
+// Safer to wrap in a struct managed by Tauri, but for quick implementation we can use a lazy_static or direct struct.
+// However, fitting into the 'run' function with `manage` is better pattern.
+// Let's implement the commands first.
+
+#[tauri::command]
+async fn start_stream(app: tauri::AppHandle, pull_url: String) -> Result<String, String> {
+    println!("Backend: start_stream called. Pull URL: {}", pull_url);
+
+    // Stop existing stream if any
+    stop_stream(app.clone()).await?;
+
+    // Find camera/mic devices (Simplification: using default dshow devices or specific ones if known)
+    // For a robust app, we should list devices and let user choose, or pick first available.
+    // Command: ffmpeg -f dshow -i video="Integrated Camera":audio="Microphone Array" ...
+    // NOTE: This relies on ffmpeg being in PATH or bundled.
+    
+    // Hardcoded path provided by user
+    const FFMPEG_PATH: &str = r"D:\Agreement\ClassAssistantClient\ffmpeg-n6.0.1-win64-gpl-shared-6.0\bin\ffmpeg.exe";
+    
+    println!("Backend: Listing DirectShow devices via ffmpeg");
+    let list_cmd = StdCommand::new(FFMPEG_PATH)
+        .args(&["-list_devices", "true", "-f", "dshow", "-i", "dummy"])
+        .output();
+        
+    let mut video_device = String::new();
+    let mut audio_device = String::new();
+
+    if let Ok(output) = list_cmd {
+        println!(
+            "Backend: ffmpeg device list exit: {} (stdout {} bytes, stderr {} bytes)",
+            output.status,
+            output.stdout.len(),
+            output.stderr.len()
+        );
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        println!("Backend: ffmpeg device list stderr begin");
+        for line in stderr.lines() {
+            println!("Backend: ffmpeg dshow: {}", line);
+        }
+        println!("Backend: ffmpeg device list stderr end");
+        // Parse stderr for "DirectShow video devices" and "DirectShow audio devices"
+        // Minimal parser logic...
+        let mut in_video = false;
+        let mut in_audio = false;
+        for line in stderr.lines() {
+            if line.contains("DirectShow video devices") {
+                in_video = true;
+                in_audio = false;
+                continue;
+            }
+            if line.contains("DirectShow audio devices") {
+                in_video = false;
+                in_audio = true;
+                continue;
+            }
+            
+            // Typical line: [dshow @ ...]  "Camera Name"
+            if (in_video || in_audio) && line.contains("\"") {
+                if let Some(start) = line.find('"') {
+                    if let Some(end) = line[start+1..].find('"') {
+                        let name = &line[start+1..start+1+end];
+                        if in_video && video_device.is_empty() {
+                            video_device = name.to_string();
+                            println!("Backend: Selected video device: {}", video_device);
+                        } else if in_audio && audio_device.is_empty() {
+                            audio_device = name.to_string();
+                            println!("Backend: Selected audio device: {}", audio_device);
+                        }
+                    }
+                }
+            }
+
+            // Fallback: some ffmpeg builds don't print the "DirectShow video/audio devices" headers.
+            // Detect by "(video)" / "(audio)" suffix on the same line.
+            if line.contains("\"") && (line.contains("(video)") || line.contains("(audio)")) {
+                if let Some(start) = line.find('"') {
+                    if let Some(end) = line[start + 1..].find('"') {
+                        let name = &line[start + 1..start + 1 + end];
+                        if line.contains("(video)") && video_device.is_empty() {
+                            video_device = name.to_string();
+                            println!("Backend: Selected video device (fallback): {}", video_device);
+                        } else if line.contains("(audio)") && audio_device.is_empty() {
+                            audio_device = name.to_string();
+                            println!("Backend: Selected audio device (fallback): {}", audio_device);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    if video_device.is_empty() {
+        return Err("No video device found".to_string());
+    }
+    if audio_device.is_empty() {
+        // Fallback or just ignore audio? Let's try to proceed without audio if not found?
+        // Protocol usually implies AV.
+        println!("Backend: Warning - No audio device found.");
+    }
+
+    println!("Backend: Using Video='{}', Audio='{}'", video_device, audio_device);
+
+    let args = vec![
+        "-f".to_string(), "dshow".to_string(),
+        "-rtbufsize".to_string(), "100M".to_string(),
+        "-i".to_string(),
+        if audio_device.is_empty() {
+            format!("video={}", video_device)
+        } else {
+            format!("video={}:audio={}", video_device, audio_device)
+        },
+        "-c:v".to_string(), "libx264".to_string(),
+        "-preset".to_string(), "ultrafast".to_string(),
+        "-tune".to_string(), "zerolatency".to_string(),
+        "-c:a".to_string(), "aac".to_string(),
+        "-b:a".to_string(), "128k".to_string(),
+        "-ar".to_string(), "44100".to_string(),
+        "-r".to_string(), "25".to_string(),
+        "-f".to_string(), "mpegts".to_string(),
+        pull_url // The target URL, e.g. srt://...
+    ];
+    println!("Backend: ffmpeg args: {:?}", args);
+
+    // Spawn the process
+    let child = StdCommand::new(FFMPEG_PATH)
+        .args(&args)
+        // .stdout(std::process::Stdio::null())
+        // .stderr(std::process::Stdio::null()) // Maybe keep stderr for debugging?
+        .spawn()
+        .map_err(|e| format!("Failed to start ffmpeg: {}", e))?;
+    println!("Backend: ffmpeg started, pid={}", child.id());
+
+    let state = app.state::<StreamState>();
+    *state.process.lock().unwrap() = Some(child);
+
+    Ok("Stream started".to_string())
+}
+
+#[tauri::command]
+async fn stop_stream(app: tauri::AppHandle) -> Result<String, String> {
+    println!("Backend: stop_stream called");
+    let state = app.state::<StreamState>();
+    let mut process_guard = state.process.lock().unwrap();
+    
+    if let Some(mut child) = process_guard.take() {
+        let _ = child.kill(); // Force kill
+        let _ = child.wait(); // Prevent zombie
+        Ok("Stream stopped".to_string())
+    } else {
+        Ok("No active stream".to_string())
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+    .manage(StreamState { process: Mutex::new(None) })
     .plugin(tauri_plugin_opener::init())
     .plugin(tauri_plugin_fs::init())
     .plugin(tauri_plugin_shell::init())
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { .. } = event {
+                // Ensure any active stream is stopped before window closes.
+                let state = window.app_handle().state::<StreamState>();
+                let mut process_guard = state.process.lock().unwrap();
+                if let Some(mut child) = process_guard.take() {
+                    println!("Backend: window closing, stopping active stream");
+                    let _ = child.kill();
+                    let _ = child.wait();
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             greet, 
             login,
@@ -1786,7 +1960,9 @@ pub fn run() {
             get_student_scores,
             get_group_scores,
             exit_app,
-            start_file_drag
+            start_file_drag,
+            start_stream,
+            stop_stream
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
