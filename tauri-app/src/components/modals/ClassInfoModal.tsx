@@ -43,6 +43,7 @@ const ClassInfoModal = ({ isOpen, onClose, groupId, groupName, isClassGroup = tr
     const [linkTodaySchedule, setLinkTodaySchedule] = useState(false);
     const [linkHomework, setLinkHomework] = useState(false);
     const [linkPrepareClass, setLinkPrepareClass] = useState(false);
+    const [linkDutyRoster, setLinkDutyRoster] = useState(false);
 
     // Modal States
     const [showDutyRoster, setShowDutyRoster] = useState(false);
@@ -95,6 +96,41 @@ const ClassInfoModal = ({ isOpen, onClose, groupId, groupName, isClassGroup = tr
                 token
             });
             const res = JSON.parse(resStr);
+            console.log("%c[ClassInfoModal] Group Members Response:", "color: #2196F3; font-weight: bold;", res);
+
+            // Fetch Settings Separately for reliability
+            try {
+                console.log(`%c[ClassInfoModal] Fetching settings for group: ${groupId}`, "color: #9C27B0;");
+                const settingsStr = await invoke<string>('get_group_settings', {
+                    groupId: groupId,
+                    token
+                });
+                const settingsRes = JSON.parse(settingsStr);
+                console.log("%c[ClassInfoModal] Group Settings Response:", "background: #E1BEE7; color: #4A148C; padding: 2px 5px; font-weight: bold;", settingsRes);
+
+                // 兼容两种格式: settingsRes.data.settings 或 settingsRes.data
+                const s = settingsRes.data?.settings || settingsRes.data;
+                
+                if (s) {
+                    console.log("%c[ClassInfoModal] Applying Settings from Server:", "color: #4CAF50; font-weight: bold;", s);
+                    
+                    // 使用更加健壮的转换逻辑
+                    const getVal = (val: any) => val === 1 || val === true || val === "1" || val === "true";
+                    
+                    if (s.receive_notification !== undefined) setReceiveNotification(getVal(s.receive_notification));
+                    if (s.link_today_schedule !== undefined) setLinkTodaySchedule(getVal(s.link_today_schedule));
+                    if (s.link_homework !== undefined) {
+                        const hwEnabled = getVal(s.link_homework);
+                        setLinkHomework(hwEnabled);
+                        if (groupId) localStorage.setItem(`class_link_homework_${groupId}`, String(hwEnabled));
+                    }
+                    if (s.link_pre_class_preparation !== undefined) setLinkPrepareClass(getVal(s.link_pre_class_preparation));
+                    if (s.link_duty_roster !== undefined) setLinkDutyRoster(getVal(s.link_duty_roster));
+                    if (s.enable_intercom !== undefined) setIntercomEnabled(getVal(s.enable_intercom));
+                }
+            } catch (e) {
+                console.error("%c[ClassInfoModal] Failed to fetch group settings", "background: #FFEB3B; color: #F44336;", e);
+            }
 
             // Fetch TIM members reliably - Wait for SDK if needed
             let timMembers: any[] = [];
@@ -166,36 +202,6 @@ const ClassInfoModal = ({ isOpen, onClose, groupId, groupName, isClassGroup = tr
                 }
                 setCurrentUserId(currentUserIdLocal);
 
-                if (res.data?.group_info) {
-                    const groupInfo = res.data.group_info;
-                    setIntercomEnabled(!!groupInfo.enable_intercom);
-                    // Load all settings from server
-                    if (groupInfo.receive_notification !== undefined) {
-                        const notificationEnabled = groupInfo.receive_notification === 1 || groupInfo.receive_notification === true;
-                        setReceiveNotification(notificationEnabled);
-                        // 同步到Dashboard
-                        window.dispatchEvent(new CustomEvent('notification-setting-changed', {
-                            detail: { receiveNotification: notificationEnabled }
-                        }));
-                    }
-                    if (groupInfo.link_today_schedule !== undefined) {
-                        setLinkTodaySchedule(groupInfo.link_today_schedule === 1 || groupInfo.link_today_schedule === true);
-                    }
-                    if (groupInfo.link_homework !== undefined) {
-                        const homeworkEnabled = groupInfo.link_homework === 1 || groupInfo.link_homework === true;
-                        setLinkHomework(homeworkEnabled);
-                        if (groupId) {
-                            localStorage.setItem(`class_link_homework_${groupId}`, String(homeworkEnabled));
-                        }
-                        window.dispatchEvent(new CustomEvent('homework-link-changed', {
-                            detail: { linkHomework: homeworkEnabled }
-                        }));
-                    }
-                    if (groupInfo.link_pre_class_preparation !== undefined) {
-                        setLinkPrepareClass(groupInfo.link_pre_class_preparation === 1 || groupInfo.link_pre_class_preparation === true);
-                    }
-                }
-
             } else {
                 setMembers([]);
             }
@@ -213,22 +219,42 @@ const ClassInfoModal = ({ isOpen, onClose, groupId, groupName, isClassGroup = tr
         }
     };
 
+    // Helper to sync all settings to server
+    const syncAllSettings = async (overrides: any = {}) => {
+        if (!groupId) return;
+        
+        const settings = {
+            receive_notification: overrides.receive_notification !== undefined ? (overrides.receive_notification ? 1 : 0) : (receiveNotification ? 1 : 0),
+            link_today_schedule: overrides.link_today_schedule !== undefined ? (overrides.link_today_schedule ? 1 : 0) : (linkTodaySchedule ? 1 : 0),
+            link_homework: overrides.link_homework !== undefined ? (overrides.link_homework ? 1 : 0) : (linkHomework ? 1 : 0),
+            link_pre_class_preparation: overrides.link_pre_class_preparation !== undefined ? (overrides.link_pre_class_preparation ? 1 : 0) : (linkPrepareClass ? 1 : 0),
+            link_duty_roster: overrides.link_duty_roster !== undefined ? (overrides.link_duty_roster ? 1 : 0) : (linkDutyRoster ? 1 : 0),
+            enable_intercom: overrides.enable_intercom !== undefined ? (overrides.enable_intercom ? 1 : 0) : (intercomEnabled ? 1 : 0),
+        };
+
+        try {
+            const token = localStorage.getItem('token') || '';
+            console.log(`%c[ClassInfoModal] Syncing all settings to server for ${groupId}:`, "background: #4CAF50; color: white; padding: 2px 5px; font-weight: bold;", settings);
+            const response = await invoke<string>('update_group_settings', {
+                groupId: groupId,
+                settings,
+                token
+            });
+            console.log('%c[ClassInfoModal] Server response for sync:', "color: #4CAF50;", response);
+        } catch (e) {
+            console.error("%c[ClassInfoModal] Failed to sync settings", "background: #F44336; color: white;", e);
+            throw e;
+        }
+    };
+
     const handleToggleIntercom = async () => {
         if (!groupId) return;
         const newState = !intercomEnabled;
         setIntercomEnabled(newState);
         try {
-            // Use update_group_settings API to be consistent with Qt
-            const token = localStorage.getItem('token') || '';
-            await invoke('update_group_settings', {
-                groupId: groupId,
-                settingName: 'enable_intercom',
-                value: newState ? 1 : 0,
-                token
-            });
+            await syncAllSettings({ enable_intercom: newState });
             console.log('[ClassInfoModal] 开启对讲设置已保存:', newState);
         } catch (e) {
-            console.error("Failed to toggle intercom", e);
             setIntercomEnabled(!newState);
             alert("切换对讲状态失败");
         }
@@ -239,13 +265,7 @@ const ClassInfoModal = ({ isOpen, onClose, groupId, groupName, isClassGroup = tr
         const newValue = !receiveNotification;
         setReceiveNotification(newValue);
         try {
-            const token = localStorage.getItem('token') || '';
-            await invoke('update_group_settings', {
-                groupId: groupId,
-                settingName: 'receive_notification',
-                value: newValue ? 1 : 0,
-                token
-            });
+            await syncAllSettings({ receive_notification: newValue });
             console.log('[ClassInfoModal] 接收通知设置已保存:', newValue);
             
             // 通知Dashboard更新接收通知状态
@@ -253,8 +273,7 @@ const ClassInfoModal = ({ isOpen, onClose, groupId, groupName, isClassGroup = tr
                 detail: { receiveNotification: newValue }
             }));
         } catch (err) {
-            console.error('[ClassInfoModal] 保存接收通知设置失败:', err);
-            setReceiveNotification(!newValue); // Revert on error
+            setReceiveNotification(!newValue);
             alert('保存设置失败，请重试');
         }
     };
@@ -264,17 +283,10 @@ const ClassInfoModal = ({ isOpen, onClose, groupId, groupName, isClassGroup = tr
         const newValue = !linkTodaySchedule;
         setLinkTodaySchedule(newValue);
         try {
-            const token = localStorage.getItem('token') || '';
-            await invoke('update_group_settings', {
-                groupId: groupId,
-                settingName: 'link_today_schedule',
-                value: newValue ? 1 : 0,
-                token
-            });
+            await syncAllSettings({ link_today_schedule: newValue });
             console.log('[ClassInfoModal] 关联今日课表设置已保存:', newValue);
         } catch (err) {
-            console.error('[ClassInfoModal] 保存关联今日课表设置失败:', err);
-            setLinkTodaySchedule(!newValue); // Revert on error
+            setLinkTodaySchedule(!newValue);
             alert('保存设置失败，请重试');
         }
     };
@@ -284,21 +296,14 @@ const ClassInfoModal = ({ isOpen, onClose, groupId, groupName, isClassGroup = tr
         const newValue = !linkHomework;
         setLinkHomework(newValue);
         try {
-            const token = localStorage.getItem('token') || '';
-            await invoke('update_group_settings', {
-                groupId: groupId,
-                settingName: 'link_homework',
-                value: newValue ? 1 : 0,
-                token
-            });
+            await syncAllSettings({ link_homework: newValue });
             console.log('[ClassInfoModal] 关联家庭作业设置已保存:', newValue);
             localStorage.setItem(`class_link_homework_${groupId}`, String(newValue));
             window.dispatchEvent(new CustomEvent('homework-link-changed', {
                 detail: { linkHomework: newValue }
             }));
         } catch (err) {
-            console.error('[ClassInfoModal] 保存关联家庭作业设置失败:', err);
-            setLinkHomework(!newValue); // Revert on error
+            setLinkHomework(!newValue);
             alert('保存设置失败，请重试');
         }
     };
@@ -308,17 +313,28 @@ const ClassInfoModal = ({ isOpen, onClose, groupId, groupName, isClassGroup = tr
         const newValue = !linkPrepareClass;
         setLinkPrepareClass(newValue);
         try {
-            const token = localStorage.getItem('token') || '';
-            await invoke('update_group_settings', {
-                groupId: groupId,
-                settingName: 'link_pre_class_preparation',
-                value: newValue ? 1 : 0,
-                token
-            });
+            await syncAllSettings({ link_pre_class_preparation: newValue });
             console.log('[ClassInfoModal] 关联课前准备设置已保存:', newValue);
+            
+            // 通知ClassScheduleWindow更新状态
+            window.dispatchEvent(new CustomEvent('prepare-class-link-changed', {
+                detail: { linkPrepareClass: newValue }
+            }));
         } catch (err) {
-            console.error('[ClassInfoModal] 保存关联课前准备设置失败:', err);
-            setLinkPrepareClass(!newValue); // Revert on error
+            setLinkPrepareClass(!newValue);
+            alert('保存设置失败，请重试');
+        }
+    };
+
+    const handleToggleDutyRoster = async () => {
+        if (!groupId) return;
+        const newValue = !linkDutyRoster;
+        setLinkDutyRoster(newValue);
+        try {
+            await syncAllSettings({ link_duty_roster: newValue });
+            console.log('[ClassInfoModal] 关联值日表设置已保存:', newValue);
+        } catch (err) {
+            setLinkDutyRoster(!newValue);
             alert('保存设置失败，请重试');
         }
     };
@@ -654,6 +670,23 @@ const ClassInfoModal = ({ isOpen, onClose, groupId, groupName, isClassGroup = tr
                                 className={`w-10 h-5 rounded-full flex items-center px-0.5 transition-colors duration-300 ${linkPrepareClass ? 'bg-blue-500' : 'bg-gray-300'}`}
                             >
                                 <div className={`w-4 h-4 bg-white rounded-full shadow-sm transform transition-transform duration-300 ${linkPrepareClass ? 'translate-x-5' : 'translate-x-0'}`} />
+                            </button>
+                        </div>
+
+                        <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-gray-100">
+                            <div className="flex items-center gap-3 flex-1">
+                                <div className="w-8 h-8 rounded-full bg-cyan-100 text-cyan-600 flex items-center justify-center">
+                                    <ClipboardList size={16} />
+                                </div>
+                                <div className="flex-1">
+                                    <p className="text-xs text-gray-400">关联值日表</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={handleToggleDutyRoster}
+                                className={`w-10 h-5 rounded-full flex items-center px-0.5 transition-colors duration-300 ${linkDutyRoster ? 'bg-blue-500' : 'bg-gray-300'}`}
+                            >
+                                <div className={`w-4 h-4 bg-white rounded-full shadow-sm transform transition-transform duration-300 ${linkDutyRoster ? 'translate-x-5' : 'translate-x-0'}`} />
                             </button>
                         </div>
                     </div>

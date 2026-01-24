@@ -49,14 +49,26 @@ const NotificationModal = ({ isOpen, onClose, classId, groupId, groupName, class
     useEffect(() => {
         if (isOpen && classId) {
             if (readOnly) {
+                // 优先从本地历史加载，再合并未读通知
+                const history = loadNotices(classId);
                 const unread = getLatestNotifications() || [];
-                const mapped = unread.map((item: any, idx: number) => ({
-                    id: String(item.id || item.notification_id || Date.now() + idx),
+                const mappedUnread = unread.map((item: any, i: number) => ({
+                    id: String(item.id || item.notification_id || Date.now() + i),
                     content: item.content || item.message || "",
                     senderName: item.sender_name || item.senderName || "系统",
                     timestamp: item.timestamp ? Number(item.timestamp) : Date.now()
                 }));
-                setNotices(mapped.slice(0, MAX_NOTICES));
+                
+                // 合并并去重
+                setNotices(() => {
+                    const combined = [...mappedUnread, ...history];
+                    const seen = new Set();
+                    return combined.filter(n => {
+                        if (seen.has(n.id)) return false;
+                        seen.add(n.id);
+                        return true;
+                    }).slice(0, MAX_NOTICES);
+                });
                 setShowHistory(false);
             } else {
                 setNotices(loadNotices(classId));
@@ -73,14 +85,25 @@ const NotificationModal = ({ isOpen, onClose, classId, groupId, groupName, class
             if (!msgStr) return;
             try {
                 const msg = JSON.parse(msgStr);
-                if (msg.type === 'notification' && (!classId || msg.class_id === classId)) {
+                // 更加健壮的 ID 匹配
+                const isMatch = !classId || 
+                                String(msg.class_id) === String(classId) || 
+                                String(msg.group_id) === String(classId) ||
+                                (msg.class_id && String(classId).startsWith(String(msg.class_id)));
+
+                if (msg.type === 'notification' && isMatch) {
                     const notice: Notice = {
                         id: String(msg.notification_id || Date.now()),
                         content: msg.content || "",
                         senderName: msg.sender_name || "系统",
                         timestamp: Date.now()
                     };
-                    setNotices(prev => [notice, ...prev].slice(0, MAX_NOTICES));
+                    setNotices(prev => {
+                        const updated = [notice, ...prev].slice(0, MAX_NOTICES);
+                        // 实时收到通知也存入本地，防止刷新丢失
+                        if (classId) saveNotices(classId, updated);
+                        return updated;
+                    });
                 }
             } catch (e) {
                 // ignore

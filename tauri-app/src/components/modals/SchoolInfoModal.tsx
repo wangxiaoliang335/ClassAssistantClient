@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, School, BookOpen, Users2, Activity, Heart, ArrowRight, Building, Save, Trash2, Plus, Upload, Download, CheckCircle2 } from 'lucide-react';
+import { X, School, BookOpen, Users2, Activity, Heart, Save, Trash2, Plus, Upload, Download, CheckCircle2 } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 
 interface UserInfo {

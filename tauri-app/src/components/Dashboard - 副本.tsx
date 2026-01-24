@@ -10,7 +10,7 @@ import UserInfoModal from './modals/UserInfoModal';
 import SchoolInfoModal from './modals/SchoolInfoModal';
 import ClassTextMessageWindow from './ClassTextMessageWindow';
 import { loginTIM, getTIMGroups } from '../utils/tim';
-import { sendMessageWS } from '../utils/websocket';
+import { connectWS, sendMessageWS } from '../utils/websocket';
 
 import { invoke } from '@tauri-apps/api/core';
 
@@ -147,7 +147,8 @@ const Dashboard = ({ userInfo }: DashboardProps) => {
         const classCode = currentUserInfo?.class_code || currentUserInfo?.classCode || currentUserInfo?.class_id;
         if (!classCode) return;
 
-        // WebSocket 连接已由 WebSocketProvider 统一管理，此处无需重复调用 connectWS
+        // 连接WebSocket
+        connectWS(classCode);
 
         // 监听WebSocket消息
         const handleWSMessage = (event: Event) => {
@@ -171,9 +172,10 @@ const Dashboard = ({ userInfo }: DashboardProps) => {
                     if (action === "start_stream") {
                         console.log("[Dashboard] Starting Remote Monitoring...");
                         const streamName = `live/${targetGroupId}_${ts}`;
-                        const pullUrl = `srt://47.100.126.194:10080?streamid=#!::r=${streamName},m=publish`;
+                        const publishUrl = `srt://47.100.126.194:10080?streamid=#!::r=${streamName},m=publish`;
+                        const playUrl = `webrtc://47.100.126.194/live/${targetGroupId}_${ts}`;
 
-                        invoke('start_stream', { pullUrl: pullUrl })
+                        invoke('start_stream', { pullUrl: publishUrl })
                             .then(() => console.log("[Dashboard] Streaming started successfully"))
                             .catch(err => console.error("[Dashboard] Failed to start stream:", err));
 
@@ -183,7 +185,7 @@ const Dashboard = ({ userInfo }: DashboardProps) => {
                             class_id: classCode,
                             group_id: targetGroupId,  // Use the same group_id from teacher's request
                             stream_name: streamName,
-                            pull_url: pullUrl,
+                            pull_url: playUrl,
                             sender_id: currentUserInfo?.user_id || "",
                             sender_name: currentUserInfo?.name || "Class Terminal",
                             ts: ts

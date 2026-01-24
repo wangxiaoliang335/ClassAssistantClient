@@ -12,7 +12,7 @@ interface CourseScheduleModalProps {
 
 // Mock Schedule Data removed
 
-const CURRENT_TERM = "2023-2024 第二学期";
+const CURRENT_TERM = "2025-2026-1";
 
 const CourseScheduleModal = ({ isOpen, onClose, classId }: CourseScheduleModalProps) => {
     const { style, handleMouseDown } = useDraggable();

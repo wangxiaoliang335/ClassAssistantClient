@@ -1,5 +1,5 @@
-import { X, Check, Bell, User, Users, Clock } from "lucide-react";
-import { useEffect, useState } from "react";
+import { X, Bell, User, Users, Clock } from "lucide-react";
+// import { useEffect, useState } from "react"; // Unused
 
 export interface NotificationItem {
     id: number;

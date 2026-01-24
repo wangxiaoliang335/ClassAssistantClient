@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { invoke } from '@tauri-apps/api/core';
-import { Minus, X, Square, Copy, MessageCircle, Calendar, Users, BookOpen, Shuffle, Clock, Grid, LayoutDashboard, Layers, Award, Mic, FileSpreadsheet, BarChart2, ArrowUpDown, Bell, ChevronRight } from 'lucide-react';
+import { Minus, X, Square, Copy, MessageCircle, Calendar, Users, BookOpen, Shuffle, Clock, Grid, LayoutDashboard, Layers, Award, Mic, FileSpreadsheet, BarChart2, ArrowUpDown, Bell } from 'lucide-react';
 import { getTIMGroups, isSDKReady, loginTIM } from '../utils/tim';
 import { sendMessageWS } from '../utils/websocket';
 import RandomCallModal from './modals/RandomCallModal';
@@ -24,11 +24,6 @@ import DailySchedule from './DailySchedule';
 import SeatMap from './SeatMap';
 
 
-
-const isSpecialSubject = (subject: string): boolean => {
-    const specials = ['早读', '午休', '眼保健操', '课间操', '班会', '大课间', '课服', '晚自习'];
-    return specials.some(s => subject.includes(s));
-};
 
 const ClassScheduleWindow = () => {
     const { groupclassId } = useParams();
@@ -56,8 +51,6 @@ const ClassScheduleWindow = () => {
     const [isNotificationOpen, setIsNotificationOpen] = useState(false);
     const [isNotificationCenterOpen, setIsNotificationCenterOpen] = useState(false); // New Notification Center
     const [notifications, setNotifications] = useState<NotificationItem[]>([]); // Data for Notification Center
-    const [receiveNotification, setReceiveNotification] = useState(true); // 接收通知开关
-    const [linkPrepareClass, setLinkPrepareClass] = useState(false); // 关联课前准备开关
     const [isStudentImportOpen, setIsStudentImportOpen] = useState(false);
     const [isScoreAnalysisOpen, setIsScoreAnalysisOpen] = useState(false);
     const [isArrangeSeatOpen, setIsArrangeSeatOpen] = useState(false);
@@ -70,9 +63,6 @@ const ClassScheduleWindow = () => {
     const [isPostEvaluationOpen, setIsPostEvaluationOpen] = useState(false);
     const [selectedSubject, setSelectedSubject] = useState("");
     const [selectedTime, setSelectedTime] = useState("");
-
-    // Remote Shutdown State
-    const [shutdownCountdown, setShutdownCountdown] = useState<number | null>(null);
 
     const [backgroundImage, setBackgroundImage] = useState<string | null>(null);
 
@@ -139,22 +129,6 @@ const ClassScheduleWindow = () => {
         };
         window.addEventListener('homework-link-changed', handleHomeworkLinkChanged as EventListener);
 
-        const handleNotificationSettingChanged = (event: Event) => {
-            const detail = (event as CustomEvent).detail;
-            if (detail?.receiveNotification !== undefined) {
-                setReceiveNotification(!!detail.receiveNotification);
-            }
-        };
-        window.addEventListener('notification-setting-changed', handleNotificationSettingChanged as EventListener);
-
-        const handlePrepareClassLinkChanged = (event: Event) => {
-            const detail = (event as CustomEvent).detail;
-            if (detail?.linkPrepareClass !== undefined) {
-                setLinkPrepareClass(!!detail.linkPrepareClass);
-            }
-        };
-        window.addEventListener('prepare-class-link-changed', handlePrepareClassLinkChanged as EventListener);
-
         const checkMaximized = async () => {
             const win = getCurrentWindow();
             setIsMaximized(await win.isMaximized());
@@ -174,8 +148,6 @@ const ClassScheduleWindow = () => {
         return () => {
             unlisten.then(f => f());
             window.removeEventListener('homework-link-changed', handleHomeworkLinkChanged as EventListener);
-            window.removeEventListener('notification-setting-changed', handleNotificationSettingChanged as EventListener);
-            window.removeEventListener('prepare-class-link-changed', handlePrepareClassLinkChanged as EventListener);
         }
     }, [groupclassId]);
 
@@ -187,104 +159,66 @@ const ClassScheduleWindow = () => {
         setIsHomeworkOpen(true);
     };
 
-    // Listen for WebSocket Messages (Notification Center & Homework)
+    // Listen for WebSocket Messages (Notification Center)
     useEffect(() => {
         const handleWSMessage = (event: CustomEvent) => {
             try {
                 const msg = JSON.parse(event.detail);
                 if (msg.type === "unread_notifications") {
+                    console.log("[ClassSchedule] Received Notifications Payload:", msg.data);
+
+                    // msg.data is an array of objects. We need to cast them to NotificationItem
                     const newItems = (msg.data || []) as NotificationItem[];
+
                     setNotifications(prev => {
+                        // Create a map of existing items by ID for easy lookup
                         const existingMap = new Map(prev.map(item => [item.id, item]));
+
+                        // Merge/Overwrite with new items
                         newItems.forEach(item => {
                             existingMap.set(item.id, item);
                         });
+
+                        // Convert back to array
                         return Array.from(existingMap.values());
                     });
-                } else if (msg.type === "homework") {
-                    const isMatch = String(msg.class_id) === String(groupclassId) || 
-                                    String(msg.group_id) === String(groupclassId) ||
-                                    (msg.class_id && String(groupclassId).startsWith(String(msg.class_id)));
 
-                    if (isMatch) {
-                        const receivedKey = `homework_received_${groupclassId}`;
-                        try {
-                            const existing = JSON.parse(localStorage.getItem(receivedKey) || "[]");
-                            const newHomework = {
-                                id: String(msg.id || Date.now()),
-                                subject: msg.subject || '未分类',
-                                content: msg.content || '',
-                                date: msg.date || new Date().toISOString().split('T')[0],
-                                createdAt: Date.now()
-                            };
-                            if (!existing.some((h: any) => h.id === newHomework.id)) {
-                                const updated = [newHomework, ...existing].slice(0, 100);
-                                localStorage.setItem(receivedKey, JSON.stringify(updated));
-                            }
-                        } catch (e) { }
-
-                        if (linkHomeworkEnabled) {
-                            setIsHomeworkOpen(true);
-                        }
-                    }
-                } else if (msg.type === "notification") {
-                    const isMatch = String(msg.class_id) === String(groupclassId) || 
-                                    String(msg.group_id) === String(groupclassId) ||
-                                    (msg.class_id && String(groupclassId).startsWith(String(msg.class_id)));
-                    
-                    if (isMatch) {
-                        const noticeKey = `notification_history_${groupclassId}`;
-                        try {
-                            const existing = JSON.parse(localStorage.getItem(noticeKey) || "[]");
-                            const newNotice = {
-                                id: String(msg.notification_id || Date.now()),
-                                content: msg.content || '',
-                                senderName: msg.sender_name || '系统',
-                                timestamp: Date.now()
-                            };
-                            if (!existing.some((n: any) => n.id === newNotice.id)) {
-                                const updated = [newNotice, ...existing].slice(0, 100);
-                                localStorage.setItem(noticeKey, JSON.stringify(updated));
-                            }
-                        } catch (e) { }
-
-                        if (receiveNotification) {
-                            setIsNotificationOpen(true);
-                        }
-                    }
-                } else if (msg.type === "prepare_class") {
-                    const cid = msg.class_id || (msg.group_id && msg.group_id.substring(0, 9));
-                    const sub = msg.subject ? msg.subject.replace(/\n/g, '').trim() : "";
-                    
-                    if (cid && sub && msg.time && msg.content) {
-                        const key = `prepare_class_${cid}_${sub}_${msg.time}`;
-                        localStorage.setItem(key, msg.content);
-                    }
-                } else if (msg.type === "remote_shutdown") {
-                    setShutdownCountdown(10);
+                    // Auto-open if important? Maybe just show badge.
                 } else if (msg.type === "monitor") {
+                    console.log("[ClassSchedule] Received Monitor Command:", msg);
                     const action = msg.action;
                     const senderId = msg.sender_id;
                     const ts = Math.floor(Date.now() / 1000);
+                    // Use the group_id from the received message (from teacher), fallback to groupclassId
                     const targetGroupId = msg.group_id || groupclassId;
 
                     if (action === "start_stream") {
+                        console.log("[ClassSchedule] Starting Remote Monitoring...");
+
+                        // Construct Stream Name & Pull URL
+                        // StreamID format: #!::r=live/CLASSID_TS,m=publish
                         const streamName = `live/${targetGroupId}_${ts}`;
-                        const pullUrl = `srt://47.100.126.194:10080?streamid=#!::r=${streamName},m=publish`;
-                        invoke('start_stream', { pullUrl: pullUrl })
-                            .catch(err => console.error(err));
+                        const publishUrl = `srt://47.100.126.194:10080?streamid=#!::r=${streamName},m=publish`;
+                        const playUrl = `webrtc://47.100.126.194/live/${targetGroupId}_${ts}`;
+
+                        // Call Rust Backend to Start Streaming
+                        invoke('start_stream', { pullUrl: publishUrl })
+                            .then(() => console.log("[ClassSchedule] Streaming started successfully"))
+                            .catch(err => console.error("[ClassSchedule] Failed to start stream:", err));
 
                         const response = {
                             type: "camera_stream",
                             action: "start_pull",
                             class_id: groupclassId,
-                            group_id: targetGroupId,
+                            group_id: targetGroupId,  // Use the same group_id from teacher's request
                             stream_name: streamName,
-                            pull_url: pullUrl,
+                            pull_url: playUrl,
                             sender_id: senderId,
                             sender_name: "Class Terminal",
                             ts: ts
                         };
+
+                        // Try to get current user ID
                         try {
                             const uStr = localStorage.getItem('user_info');
                             if (uStr) {
@@ -293,17 +227,25 @@ const ClassScheduleWindow = () => {
                                 if (u.name) response.sender_name = u.name;
                             }
                         } catch (e) { }
+
+                        console.log("[ClassSchedule] Sending start_pull feedback:", response);
                         const wsPayload = JSON.stringify(response);
                         const wsMessage = wsPayload.startsWith('to:') ? wsPayload : `to:${targetGroupId}:${wsPayload}`;
                         sendMessageWS(wsMessage);
+
                     } else if (action === "stop_stream") {
+                        console.log("[ClassSchedule] Stopping Remote Monitoring...");
+
+                        // Call Rust Backend to Stop Streaming
                         invoke('stop_stream')
-                            .catch(err => console.error(err));
+                            .then(() => console.log("[ClassSchedule] Streaming stopped successfully"))
+                            .catch(err => console.error("[ClassSchedule] Failed to stop stream:", err));
+
                         const response = {
                             type: "camera_stream",
                             action: "stop_pull",
                             class_id: groupclassId,
-                            group_id: targetGroupId,
+                            group_id: targetGroupId,  // Use the same group_id from teacher's request
                             sender_id: "",
                             ts: ts
                         };
@@ -314,6 +256,8 @@ const ClassScheduleWindow = () => {
                                 if (u.user_id) response.sender_id = u.user_id;
                             }
                         } catch (e) { }
+
+                        console.log("[ClassSchedule] Sending stop_pull feedback:", response);
                         const wsPayload = JSON.stringify(response);
                         const wsMessage = wsPayload.startsWith('to:') ? wsPayload : `to:${targetGroupId}:${wsPayload}`;
                         sendMessageWS(wsMessage);
@@ -328,27 +272,7 @@ const ClassScheduleWindow = () => {
         return () => {
             window.removeEventListener('ws-message', handleWSMessage as EventListener);
         };
-    }, [groupclassId, linkHomeworkEnabled, receiveNotification]); // 全面更新依赖项
-
-    // Handle Shutdown Countdown
-    useEffect(() => {
-        if (shutdownCountdown === null) return;
-
-        if (shutdownCountdown <= 0) {
-            console.log("[ClassSchedule] Countdown reached 0, SHUTTING DOWN NOW!");
-            invoke('remote_shutdown_device').catch(err => {
-                console.error("Failed to shutdown device:", err);
-                alert("关机指令执行失败：" + err);
-            });
-            return;
-        }
-
-        const timer = setTimeout(() => {
-            setShutdownCountdown(prev => (prev !== null ? prev - 1 : null));
-        }, 1000);
-
-        return () => clearTimeout(timer);
-    }, [shutdownCountdown]);
+    }, []);
 
     const fetchClassInfo = async () => {
         if (!groupclassId) return;
@@ -371,6 +295,8 @@ const ClassScheduleWindow = () => {
                 } catch (e) { }
             }
 
+            console.log(`[ClassSchedule] Fetching Info for ID: ${groupclassId}, Teacher: ${teacherId}`);
+
             // Parallel requests to try to find the name
             const p1 = invoke<string>('get_group_members', { groupId: groupclassId, token })
                 .then(resStr => {
@@ -380,32 +306,36 @@ const ClassScheduleWindow = () => {
                         const list = data.members || [];
                         setStudentCount(list.length || data.group_info?.MemberNum || 0);
                         const name = data.group_info?.Name || data.group_info?.GroupName;
+                        console.log("[ClassSchedule] p1 (Members) found:", name);
                         return name;
                     }
                     return null;
                 })
-                .catch(e => { return null; });
+                .catch(e => { console.error("[ClassSchedule] p1 error:", e); return null; });
 
             const p2 = idCard ? invoke<string>('get_user_friends', { idCard, token })
                 .then(resStr => {
                     const res = JSON.parse(resStr);
                     if (res.data) {
                         const allGroups = [...(res.data.owner_groups || []), ...(res.data.member_groups || [])];
+                        // Fuzzy match because string ID from URL vs maybe formatted ID from server
                         const target = allGroups.find((g: any) => g.group_id == groupclassId);
+                        console.log("[ClassSchedule] p2 (Friends) found:", target?.group_name);
                         return target?.group_name;
                     }
                     return null;
                 })
-                .catch(e => { return null; }) : Promise.resolve(null);
+                .catch(e => { console.error("[ClassSchedule] p2 error:", e); return null; }) : Promise.resolve(null);
 
             const p3 = teacherId ? invoke<string>('get_teacher_classes', { teacherUniqueId: teacherId, token })
                 .then(resStr => {
                     const res = JSON.parse(resStr);
                     const classes = res.data?.classes || ((Array.isArray(res.data)) ? res.data : []);
                     const target = classes.find((c: any) => c.class_code == groupclassId);
+                    console.log("[ClassSchedule] p3 (Classes) found:", target?.class_name);
                     return target?.class_name;
                 })
-                .catch(e => { return null; }) : Promise.resolve(null);
+                .catch(e => { console.error("[ClassSchedule] p3 error:", e); return null; }) : Promise.resolve(null);
 
             // 4. TIM SDK Groups (Most accurate for "Group Chats")
             const p4 = (async () => {
@@ -414,47 +344,46 @@ const ClassScheduleWindow = () => {
                     // We must login because this is a new window/context
                     let ready = isSDKReady;
                     if (!ready) {
+                        console.log("[ClassSchedule] TIM Login required. Fetching Sig...");
                         const userSig = await invoke<string>('get_user_sig', { userId: teacherId });
                         if (userSig) {
                             ready = await loginTIM(teacherId, userSig) as boolean;
+                            console.log("[ClassSchedule] TIM Login Result:", ready);
                         }
                     }
 
                     if (ready) {
                         const groups = await getTIMGroups();
+                        console.log(`[ClassSchedule] TIM Groups fetched: ${groups.length}`);
                         const target = groups.find((g: any) => g.groupID == groupclassId);
+                        if (target) {
+                            console.log("[ClassSchedule] TIM Match Found:", target.name, target.groupID);
+                        } else {
+                            console.log("[ClassSchedule] TIM No Match for:", groupclassId);
+                        }
                         return target?.name;
+                    } else {
+                        console.warn("[ClassSchedule] TIM SDK not ready after login attempt");
                     }
-                } catch (e) { }
+                } catch (e) {
+                    console.error("[ClassSchedule] TIM Fetch failed in Window:", e);
+                }
                 return null;
             })();
 
             // Wait for results and pick the best name
             const [nameFromGroup, nameFromFriends, nameFromClasses, nameFromTIM] = await Promise.all([p1, p2, p3, p4]);
 
+            console.log("[ClassSchedule] Final Candidates:", { nameFromGroup, nameFromFriends, nameFromClasses, nameFromTIM });
+
             // Priority: TIM Name > Server Group Name > Teacher Classes Name > Group Info Name
             const finalName = nameFromTIM || nameFromFriends || nameFromClasses || nameFromGroup;
             if (finalName) {
                 setClassName(finalName);
             } else {
+                // If we still found nothing, keep showing ID or default, but remove "Loading..." logic if any
                 setClassName(prev => prev || groupclassId || "未命名班级");
             }
-
-            // 5. Fetch Group Settings (New: Sync switches with server)
-            try {
-                const settingsStr = await invoke<string>('get_group_settings', {
-                    groupId: groupclassId,
-                    token
-                });
-                const settingsRes = JSON.parse(settingsStr);
-                const s = settingsRes.data?.settings || settingsRes.data;
-                if (s) {
-                    const getVal = (val: any) => val === 1 || val === true || val === "1" || val === "true";
-                    if (s.link_homework !== undefined) setLinkHomeworkEnabled(getVal(s.link_homework));
-                    if (s.receive_notification !== undefined) setReceiveNotification(getVal(s.receive_notification));
-                    if (s.link_pre_class_preparation !== undefined) setLinkPrepareClass(getVal(s.link_pre_class_preparation));
-                }
-            } catch (e) { }
 
         } catch (e) {
             console.error("Failed to fetch class info:", e);
@@ -484,61 +413,6 @@ const ClassScheduleWindow = () => {
         }
     };
 
-    const handleOpenPrepareClass = () => {
-        if (!groupclassId) return;
-        
-        // 1. 从缓存获取今日课表
-        const cachedSchedule = localStorage.getItem(`daily_schedule_${groupclassId}`);
-        console.log("[ClassSchedule] Loading cached schedule for prep lookup:", cachedSchedule ? "Found" : "Empty");
-        
-        if (!cachedSchedule) {
-            setSelectedSubject("未知");
-            setSelectedTime("--");
-            setIsPrepareClassOpen(true);
-            return;
-        }
-
-        try {
-            const items = JSON.parse(cachedSchedule);
-            const now = new Date();
-            const currentMinutes = now.getHours() * 60 + now.getMinutes();
-
-            // 2. 找到下一节有科目的课
-            const nextItem = items.find((item: any) => {
-                // 排除没科目的、特殊环节（如午休）
-                if (!item.subject || isSpecialSubject(item.subject)) return false;
-                
-                // 解析时间，例如 "13:30-14:10"
-                const normalizedTime = item.time.replace(/：/g, ':');
-                const timeMatch = normalizedTime.match(/(\d{1,2}):(\d{2})/);
-                if (timeMatch) {
-                    const itemStartMinutes = parseInt(timeMatch[1]) * 60 + parseInt(timeMatch[2]);
-                    // 找到第一个开始时间在当前之后的课
-                    return itemStartMinutes > currentMinutes;
-                }
-                return false;
-            }) || items.find((item: any) => item.isCurrent && item.subject && !isSpecialSubject(item.subject));
-
-            if (nextItem) {
-                const sub = nextItem.subject.replace(/\n/g, '').trim();
-                
-                console.log(`[ClassSchedule] Target course for prep: ${sub} at ${nextItem.time}`);
-                setSelectedSubject(sub);
-                setSelectedTime(nextItem.time);
-                setIsPrepareClassOpen(true);
-            } else {
-                console.log("[ClassSchedule] No future or current course found for prep");
-                setSelectedSubject("暂无下节课");
-                setSelectedTime("--");
-                setIsPrepareClassOpen(true);
-            }
-        } catch (e) {
-            console.error("Failed to parse schedule for preparation:", e);
-            setSelectedSubject("解析错误");
-            setIsPrepareClassOpen(true);
-        }
-    };
-
     // Note: handlePublishHomework removed - HomeworkModal now handles WebSocket messaging internally
 
     return (
@@ -549,26 +423,6 @@ const ClassScheduleWindow = () => {
             {/* Overlay to ensure text readability if background is set */}
             {backgroundImage && (
                 <div className="absolute inset-0 bg-white/75 backdrop-blur-sm z-0 pointer-events-none"></div>
-            )}
-
-            {/* Shutdown Overlay */}
-            {shutdownCountdown !== null && (
-                <div className="fixed inset-0 z-[9999] bg-black/90 backdrop-blur-xl flex flex-col items-center justify-center text-white">
-                    <div className="bg-red-600/20 p-12 rounded-full border-4 border-red-600 animate-pulse mb-8">
-                        <X size={120} className="text-red-600" />
-                    </div>
-                    <h1 className="text-5xl font-black mb-4 tracking-tighter">远程关机指令</h1>
-                    <p className="text-xl opacity-60 mb-12">系统将在以下时间后自动关闭所有程序并关机</p>
-                    <div className="text-9xl font-black font-mono text-red-500 animate-bounce">
-                        {shutdownCountdown}
-                    </div>
-                    <button 
-                        onClick={() => setShutdownCountdown(null)}
-                        className="mt-16 px-8 py-3 bg-white/10 hover:bg-white/20 border border-white/20 rounded-2xl transition-all text-sm font-bold tracking-widest"
-                    >
-                        取消关机 (DEBUG ONLY)
-                    </button>
-                </div>
             )}
 
             {/* Title Bar - Added z-10 for layering */}
@@ -680,27 +534,6 @@ const ClassScheduleWindow = () => {
                                         查看全部
                                     </button>
                                 </div>
-
-                                {/* 课前准备快捷入口 (New) */}
-                                {linkPrepareClass && (
-                                    <div 
-                                        onClick={handleOpenPrepareClass}
-                                        className="bg-white p-4 rounded-2xl border border-blue-100 shadow-sm hover:shadow-md hover:border-blue-300 transition-all cursor-pointer group"
-                                    >
-                                        <div className="flex items-center justify-between">
-                                            <div className="flex items-center gap-3">
-                                                <div className="bg-blue-50 p-2 rounded-xl text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                                                    <BookOpen size={18} />
-                                                </div>
-                                                <div>
-                                                    <h3 className="font-bold text-gray-800 text-sm">课前准备</h3>
-                                                    <p className="text-[10px] text-gray-400">查看下节课准备事项</p>
-                                                </div>
-                                            </div>
-                                            <ChevronRight size={14} className="text-gray-300 group-hover:text-blue-500" />
-                                        </div>
-                                    </div>
-                                )}
                             </div>
 
                             {/* Middle Column - Homework & Stats */}
@@ -985,9 +818,8 @@ const ClassScheduleWindow = () => {
                 onClose={() => setIsPrepareClassOpen(false)}
                 subject={selectedSubject}
                 time={selectedTime}
-                classId={groupclassId?.substring(0, 9)}
+                classId={groupclassId}
                 groupId={groupclassId}
-                readOnly={isClassLogin}
             />
             <PostEvaluationModal
                 isOpen={isPostEvaluationOpen}

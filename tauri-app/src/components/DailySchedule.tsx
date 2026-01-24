@@ -81,21 +81,17 @@ const DailySchedule = ({ classId, onPrepareClass, onPostEvaluation }: Props) => 
         const fetchSchedule = async () => {
             setLoading(true);
             try {
-                const userInfoStr = localStorage.getItem('user_info');
-                let token = "";
-                if (userInfoStr) {
-                    try {
-                        const u = JSON.parse(userInfoStr);
-                        token = u.token || "";
-                    } catch { }
-                }
-
+                // 优先从 localStorage 根路径获取 token
+                const token = localStorage.getItem('token') || "";
+                
+                console.log(`[DailySchedule] Fetching for class: ${classId}, Term: 2025-2026-1`);
                 const resp = await invoke<string>('get_course_schedule', {
                     classId,
-                    term: "2023-2024 第二学期",
+                    term: "2025-2026-1",
                     token
                 });
                 const data = JSON.parse(resp);
+                console.log("[DailySchedule] Server Response:", data);
 
                 if (data.code === 200 && data.data) {
                     if (data.data.schedule && data.data.cells) {
@@ -103,7 +99,8 @@ const DailySchedule = ({ classId, onPrepareClass, onPostEvaluation }: Props) => 
                         const cells = data.data.cells;
 
                         const today = new Date().getDay();
-                        const dayMap: Record<number, number> = { 0: 6, 1: 0, 2: 1, 3: 2, 4: 3, 5: 4, 6: 5 };
+                        // 映射：周一(1)->0, ..., 周五(5)->4, 周六(6)->5, 周日(0)->6
+                        const dayMap: Record<number, number> = { 1: 0, 2: 1, 3: 2, 4: 3, 5: 4, 6: 5, 0: 6 };
                         const todayColIndex = dayMap[today];
 
                         const now = new Date();
@@ -111,16 +108,19 @@ const DailySchedule = ({ classId, onPrepareClass, onPostEvaluation }: Props) => 
 
                         const items: ScheduleItem[] = [];
                         times.forEach((time: string, rowIndex: number) => {
-                            const cell = cells.find((c: any) => c.row_index === rowIndex && c.col_index === todayColIndex);
+                            const cell = cells.find((c: any) => (c.row_index === rowIndex) && c.col_index === todayColIndex);
                             let subject = cell ? (cell.course_name || cell.subject || "") : "";
+                            
+                            // 清理科目名称中的换行符
+                            subject = subject.replace(/\n/g, '').trim();
 
-                            // Extract special subject names from time field (e.g. "早读\n7:00-7:40" -> subject="早读")
+                            // 如果单元格没课，尝试从时间标题解析特殊课程（如早读、大课间）
                             const specialMatch = time.match(/^(早读|午休|眼保健操|课间操|班会|大课间|课服\d*|晚自习\d*)/);
                             if (!subject && specialMatch) {
                                 subject = specialMatch[1];
                             }
 
-                            // Normalize Chinese colon for time matching
+                            // 规范化时间判断当前课程
                             const normalizedTime = time.replace(/：/g, ':');
                             const timeMatch = normalizedTime.match(/(\d{1,2}):(\d{2})/);
                             let isCurrent = false;
@@ -130,7 +130,7 @@ const DailySchedule = ({ classId, onPrepareClass, onPostEvaluation }: Props) => 
                             }
 
                             items.push({
-                                time: formatTime(time),
+                                time: formatTime(time), // 统一转为英文冒号
                                 rawTime: time,
                                 subject: subject,
                                 isHighlight: isSpecialSubject(subject) || isSpecialSubject(time),
@@ -138,7 +138,9 @@ const DailySchedule = ({ classId, onPrepareClass, onPostEvaluation }: Props) => 
                             });
                         });
 
-                        const filtered = items.filter(i => i.rawTime && !i.rawTime.toLowerCase().includes('lunch'));
+                        console.log("[DailySchedule] Final Processed Items:", items);
+                        // 过滤掉完全没内容的格子，但保留特殊环节
+                        const filtered = items.filter(i => i.subject || i.isHighlight);
                         setScheduleItems(filtered);
                         localStorage.setItem(getStorageKey(classId), JSON.stringify(filtered));
 

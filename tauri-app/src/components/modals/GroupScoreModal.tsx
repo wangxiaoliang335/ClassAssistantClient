@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, Users, Award, TrendingUp, Plus, Minus } from 'lucide-react';
+import { X, Users, Award, Plus, Minus } from 'lucide-react';
 import { useDraggable } from '../../hooks/useDraggable';
 
 interface GroupScoreModalProps {

@@ -224,7 +224,7 @@ const ClassTextMessageWindow = ({
                                     </div>
                                 </div>
                             ) : (
-                                messages.map((msg, idx) => (
+                                messages.map((msg) => (
                                     <div key={msg.id} className="group animate-in fade-in slide-in-from-bottom-4 duration-300">
                                         <div className="flex items-center gap-2 mb-1.5 px-1">
                                             <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>

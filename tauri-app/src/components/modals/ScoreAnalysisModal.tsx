@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { X, PieChart, BarChart3, Settings2, Plus, Trash2, Palette, RefreshCw, Check, AlertCircle } from 'lucide-react';
-import { invoke } from '@tauri-apps/api/core';
+import { X, PieChart, BarChart3, Plus, Trash2, Palette, RefreshCw, AlertCircle } from 'lucide-react';
+// import { invoke } from '@tauri-apps/api/core'; // Unused
 
 interface ScoreAnalysisModalProps {
     isOpen: boolean;
@@ -31,11 +31,11 @@ const DEFAULT_SEGMENTS: Segment[] = [
     { id: '4', min: 90, max: 100, color: '#22c55e', label: '优秀 (90-100)' },  // Green
 ];
 
-const PRESET_COLORS = [
-    '#ef4444', '#f97316', '#f59e0b', '#eab308', '#84cc16', '#22c55e',
-    '#10b981', '#14b8a6', '#06b6d4', '#0ea5e9', '#3b82f6', '#6366f1',
-    '#8b5cf6', '#a855f7', '#d946ef', '#ec4899', '#f43f5e', '#64748b'
-];
+// const PRESET_COLORS = [
+//     '#ef4444', '#f97316', '#f59e0b', '#eab308', '#84cc16', '#22c55e',
+//     '#10b981', '#14b8a6', '#06b6d4', '#0ea5e9', '#3b82f6', '#6366f1',
+//     '#8b5cf6', '#a855f7', '#d946ef', '#ec4899', '#f43f5e', '#64748b'
+// ];
 
 const ScoreAnalysisModal = ({ isOpen, onClose, classId, onApply }: ScoreAnalysisModalProps) => {
     const [mode, setMode] = useState<'segment' | 'gradient'>('segment');
@@ -298,7 +298,7 @@ const ScoreAnalysisModal = ({ isOpen, onClose, classId, onApply }: ScoreAnalysis
             }
 
             if (mode === 'segment') {
-                studentValues.forEach(({ id, name, val }) => {
+                studentValues.forEach(({ id, val }) => {
                     for (const seg of segments) {
                         if (val >= seg.min && val <= seg.max) {
                             if (id) colorMap[id] = seg.color;
@@ -310,7 +310,7 @@ const ScoreAnalysisModal = ({ isOpen, onClose, classId, onApply }: ScoreAnalysis
             } else {
                 // Gradient
                 const range = maxScore - minScore || 1;
-                studentValues.forEach(({ id, name, val }) => {
+                studentValues.forEach(({ id, val }) => {
                     const normalized = (val - minScore) / range;
                     const color = getGradientColor(normalized);
                     if (id) colorMap[id] = color;

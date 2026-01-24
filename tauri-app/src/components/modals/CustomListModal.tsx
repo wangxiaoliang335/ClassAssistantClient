@@ -259,7 +259,7 @@ const CustomListModal = ({ isOpen, onClose, classId }: CustomListModalProps) => 
                             groupScores.forEach((g: any) => {
                                 if (g.students) {
                                     g.students.forEach((s: any) => {
-                                        const row = [];
+                                        const row: any[] = [];
                                         row.push(g.group_name);
                                         row.push(s.student_id);
                                         row.push(s.student_name);
@@ -339,7 +339,7 @@ const CustomListModal = ({ isOpen, onClose, classId }: CustomListModalProps) => 
                             groupScores.forEach((g: any) => {
                                 if (g.students) {
                                     g.students.forEach((s: any) => {
-                                        const row = [];
+                                        const row: any[] = [];
                                         row.push(g.group_name);
                                         row.push(s.student_id);
                                         row.push(s.student_name);

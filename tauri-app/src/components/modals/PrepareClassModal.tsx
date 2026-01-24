@@ -10,19 +10,35 @@ interface Props {
     time: string;
     classId?: string;
     groupId?: string;
+    readOnly?: boolean;
 }
 
-const getCacheKey = (classId: string, subject: string, time: string) =>
-    `prepare_class_${classId}_${subject}_${time}`;
+const getStartTime = (time: string) => {
+    // 1. 先将中文冒号替换为英文冒号
+    const normalized = time.replace(/：/g, ':');
+    // 2. 匹配 HH:mm 格式
+    const timeMatch = normalized.match(/(\d{1,2}):(\d{2})/);
+    if (timeMatch) {
+        return `${timeMatch[1].padStart(2, '0')}:${timeMatch[2]}`;
+    }
+    return time;
+};
 
-const PrepareClassModal = ({ isOpen, onClose, subject, time, classId, groupId }: Props) => {
+const getCacheKey = (classId: string, subject: string, time: string) => {
+    const cleanSubject = subject.replace(/\n/g, '').trim();
+    return `prepare_class_${classId}_${cleanSubject}_${getStartTime(time)}`;
+};
+
+const PrepareClassModal = ({ isOpen, onClose, subject, time, classId, groupId, readOnly = false }: Props) => {
     const { style, handleMouseDown } = useDraggable();
     const [content, setContent] = useState("");
     const [sending, setSending] = useState(false);
 
     useEffect(() => {
         if (isOpen && classId) {
-            const cached = localStorage.getItem(getCacheKey(classId, subject, time));
+            // 清理科目名称
+            const cleanSubject = subject.replace(/\n/g, '').trim();
+            const cached = localStorage.getItem(getCacheKey(classId, cleanSubject, time));
             if (cached) {
                 setContent(cached);
             } else {
@@ -67,13 +83,7 @@ const PrepareClassModal = ({ isOpen, onClose, subject, time, classId, groupId }:
             const dateStr = today.toISOString().split('T')[0];
 
             // Format time as HH:MM (extract start time only)
-            let timeStr = time;
-            const timeMatch = time.match(/(\d{1,2}):(\d{2})/);
-            if (timeMatch) {
-                const hour = timeMatch[1].padStart(2, '0');
-                const minute = timeMatch[2];
-                timeStr = `${hour}:${minute}`;
-            }
+            const timeStr = getStartTime(time);
 
             // Build message object according to server protocol
             const messageObj: Record<string, string> = {
@@ -146,35 +156,54 @@ const PrepareClassModal = ({ isOpen, onClose, subject, time, classId, groupId }:
 
                 {/* Content */}
                 <div className="px-5 py-3">
-                    <label className="block text-gray-600 text-sm font-medium mb-2">请输入课前准备内容</label>
-                    <textarea
-                        value={content}
-                        onChange={e => setContent(e.target.value)}
-                        placeholder="请输入课前准备内容..."
-                        className="w-full bg-gray-50 text-gray-800 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-100 focus:border-blue-300 transition-all outline-none resize-none h-44 placeholder:text-gray-400"
-                    />
+                    <label className="block text-gray-600 text-sm font-medium mb-2">
+                        {readOnly ? "课前准备内容" : "请输入课前准备内容"}
+                    </label>
+                    {readOnly ? (
+                        <div className="w-full bg-gray-50 text-gray-800 border border-gray-200 rounded-xl px-4 py-3 text-sm min-h-[176px] whitespace-pre-wrap">
+                            {content || "暂无课前准备内容"}
+                        </div>
+                    ) : (
+                        <textarea
+                            value={content}
+                            onChange={e => setContent(e.target.value)}
+                            placeholder="请输入课前准备内容..."
+                            className="w-full bg-gray-50 text-gray-800 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-100 focus:border-blue-300 transition-all outline-none resize-none h-44 placeholder:text-gray-400"
+                        />
+                    )}
                 </div>
 
                 {/* Footer */}
                 <div className="px-5 py-4 flex justify-end gap-3 bg-gray-50/50 border-t border-gray-100">
-                    <button
-                        onClick={onClose}
-                        className="px-5 py-2.5 text-sm font-medium text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 hover:border-gray-300 rounded-xl transition-all"
-                    >
-                        取消
-                    </button>
-                    <button
-                        onClick={handleSend}
-                        disabled={!content.trim() || sending}
-                        className={`px-6 py-2.5 text-sm font-bold text-white rounded-xl flex items-center gap-2 transition-all shadow-lg ${!content.trim() || sending
-                            ? 'bg-gray-300 cursor-not-allowed shadow-none'
-                            : 'bg-blue-500 hover:bg-blue-600 shadow-blue-200'
-                            }`}
-                    >
-                        {sending && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>}
-                        <Send size={16} />
-                        确定
-                    </button>
+                    {readOnly ? (
+                        <button
+                            onClick={onClose}
+                            className="px-8 py-2.5 text-sm font-bold text-white bg-blue-500 hover:bg-blue-600 rounded-xl transition-all shadow-lg shadow-blue-200"
+                        >
+                            我知道了
+                        </button>
+                    ) : (
+                        <>
+                            <button
+                                onClick={onClose}
+                                className="px-5 py-2.5 text-sm font-medium text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 hover:border-gray-300 rounded-xl transition-all"
+                            >
+                                取消
+                            </button>
+                            <button
+                                onClick={handleSend}
+                                disabled={!content.trim() || sending}
+                                className={`px-6 py-2.5 text-sm font-bold text-white rounded-xl flex items-center gap-2 transition-all shadow-lg ${!content.trim() || sending
+                                    ? 'bg-gray-300 cursor-not-allowed shadow-none'
+                                    : 'bg-blue-500 hover:bg-blue-600 shadow-blue-200'
+                                    }`}
+                            >
+                                {sending && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>}
+                                <Send size={16} />
+                                确定
+                            </button>
+                        </>
+                    )}
                 </div>
             </div>
         </div>

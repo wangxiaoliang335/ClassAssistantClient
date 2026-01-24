@@ -27,16 +27,16 @@ interface SeatProps {
     isHeatmapMode?: boolean;
 }
 
-const SeatMap: React.FC<SeatProps> = ({ classId, onViewChange, colorMap, isHeatmapMode = false }) => {
+const SeatMap: React.FC<SeatProps> = ({ classId, colorMap, isHeatmapMode = false }) => {
     const { groupclassId } = useParams();
     // State
     const [seatData, setSeatData] = useState<SeatInfo[]>([]);
     const [loading, setLoading] = useState(false);
-    const [mode, setMode] = useState<'view' | 'edit'>('view');
+    // const [mode, setMode] = useState<'view' | 'edit'>('view');
     // const [heatmapMode, setHeatmapMode] = useState(false); // Removed unused state
-    const [selectedSeat, setSelectedSeat] = useState<SeatInfo | null>(null);
-    const [students, setStudents] = useState<Student[]>([]);
-    const [isAutoArranging, setIsAutoArranging] = useState(false);
+    // const [selectedSeat, setSelectedSeat] = useState<SeatInfo | null>(null);
+    // const [students, setStudents] = useState<Student[]>([]);
+    // const [isAutoArranging, setIsAutoArranging] = useState(false);
     const [classMembers, setClassMembers] = useState<any[]>([]); // Store full class list
 
     // Constants
@@ -51,7 +51,7 @@ const SeatMap: React.FC<SeatProps> = ({ classId, onViewChange, colorMap, isHeatm
     // However, the original code derived `classId` from `groupclassId` if it ended with '01'.
     // Let's assume the `classId` prop is the correct one to use for fetching seat map.
     // If `classId` prop is undefined, we can fall back to deriving from `groupclassId` for consistency with original logic.
-    const effectiveClassId = classId || (groupclassId?.endsWith('01') ? groupclassId.slice(0, -2) : groupclassId);
+    // const effectiveClassId = classId || (groupclassId?.endsWith('01') ? groupclassId.slice(0, -2) : groupclassId);
 
 
     // Fetch Class Members for Auto-Arrange

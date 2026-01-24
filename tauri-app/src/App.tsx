@@ -17,7 +17,6 @@ function MainApp() {
   const [userInfo, setUserInfo] = useState<any>(null);
 
   const handleLoginSuccess = async (data: any) => {
-    console.log('Login Success Data:', JSON.stringify(data));
     // Save token for API calls
     const token = data.token || data.data?.token || data.access_token || data.data?.access_token || '';
     if (token) localStorage.setItem('token', token);
@@ -44,15 +43,11 @@ function MainApp() {
           const infoRes = JSON.parse(infoResStr);
           if (infoRes.data?.code === 200 && infoRes.data?.userinfo?.length > 0) {
             const fullInfo = infoRes.data.userinfo[0];
-            console.log('Full User Info Fetched:', fullInfo);
             setUserInfo(fullInfo);
             setIsLoggedIn(true);
 
             if (fullInfo.teacher_unique_id) {
-              // Connect to WebSocket System
-              import('./utils/websocket').then(({ connectWS }) => {
-                connectWS(fullInfo.teacher_unique_id);
-              });
+              // WebSocket 连接已由 WebSocketProvider 统一管理，此处无需重复调用 connectWS
 
               localStorage.setItem('teacher_unique_id', fullInfo.teacher_unique_id);
               if (fullInfo.id_number) localStorage.setItem('id_number', fullInfo.id_number);
@@ -64,17 +59,13 @@ function MainApp() {
                   userId: fullInfo.teacher_unique_id
                 });
                 if (sig) {
-                  console.log('UserSig fetched and saved');
                   localStorage.setItem('userSig', sig);
 
                   // Login to TIM and cache groups early so CreateClassGroupModal can use them
-                  console.log('[App] Logging into TIM early...');
                   const timLoginSuccess = await loginTIM(fullInfo.teacher_unique_id, sig);
                   if (timLoginSuccess) {
-                    console.log('[App] TIM login success, fetching groups for cache...');
                     const timGroups = await getTIMGroups();
                     setCachedTIMGroups(timGroups);
-                    console.log('[App] TIM groups cached:', timGroups.length);
                   }
                 }
               } catch (e) {
@@ -99,7 +90,6 @@ function MainApp() {
       try {
         const classCode = data.class_code;
         const token = data.access_token || data.token || '';
-        console.log('[App] Auto-refreshing class info for:', classCode);
         
         const classInfoResStr = await invoke<string>('get_class_info', {
           classCode,
@@ -123,10 +113,8 @@ function MainApp() {
           
           setUserInfo(updatedClassInfo);
           localStorage.setItem('user_info', JSON.stringify(updatedClassInfo));
-          console.log('[App] Class info auto-refreshed successfully');
         }
       } catch (err) {
-        console.warn('[App] Failed to auto-refresh class info:', err);
       }
     }
   };

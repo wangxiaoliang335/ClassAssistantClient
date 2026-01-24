@@ -131,7 +131,8 @@ const HomeworkModal = ({ isOpen, onClose, classId, groupId, groupName, teachSubj
         const handleWSMessage = (e: CustomEvent) => {
             try {
                 const data = JSON.parse(e.detail);
-                if (data.type === 'homework' && data.class_id === classId) {
+                // 使用 String() 确保对比健壮
+                if (data.type === 'homework' && String(data.class_id) === String(classId)) {
                     const dateStr = data.date || new Date().toISOString().split('T')[0];
                     const newHomework: ReceivedHomework = {
                         id: String(data.id || Date.now()),

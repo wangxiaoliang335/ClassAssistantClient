@@ -1279,24 +1279,6 @@ async fn exit_app() {
 }
 
 #[tauri::command]
-async fn remote_shutdown_device() -> Result<(), String> {
-    println!("Backend: Executing remote shutdown command...");
-    #[cfg(target_os = "windows")]
-    {
-        let mut child = StdCommand::new("shutdown")
-            .args(&["/s", "/t", "0", "/f"])
-            .spawn()
-            .map_err(|e| e.to_string())?;
-        let _ = child.wait();
-        Ok(())
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        Err("Shutdown command only implemented for Windows".to_string())
-    }
-}
-
-#[tauri::command]
 async fn save_seat_arrangement(class_id: String, seats_json: String) -> Result<String, String> {
     println!("Backend: save_seat_arrangement called. ClassID: {}", class_id);
     let client = reqwest::Client::new();
@@ -1344,43 +1326,17 @@ async fn get_group_scores(class_id: String, term: String) -> Result<String, Stri
 }
 
 #[tauri::command]
-async fn update_group_settings(group_id: String, settings: serde_json::Value, token: Option<String>) -> Result<String, String> {
-    println!("Backend: update_group_settings called. group_id: {}, settings: {:?}", group_id, settings);
+async fn update_group_settings(group_id: String, setting_name: String, value: i32, token: Option<String>) -> Result<String, String> {
+    println!("Backend: update_group_settings called. group_id: {}, setting: {} = {}", group_id, setting_name, value);
     let client = reqwest::Client::new();
     let url = format!("{}groups/update-settings", API_BASE_URL);
 
-    let mut payload = if let Some(obj) = settings.as_object() {
-        obj.clone()
-    } else {
-        serde_json::Map::new()
-    };
-    
-    payload.insert("group_id".to_string(), serde_json::json!(group_id));
+    let mut payload = serde_json::json!({
+        "group_id": group_id,
+    });
+    payload[&setting_name] = serde_json::json!(value);
 
     let mut request = client.post(&url).json(&payload);
-
-    if let Some(t) = token {
-        if !t.is_empty() {
-            request = request.header("Authorization", format!("Bearer {}", t));
-        }
-    }
-
-    let response = request
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let text = response.text().await.map_err(|e| e.to_string())?;
-    Ok(text)
-}
-
-#[tauri::command]
-async fn get_group_settings(group_id: String, token: Option<String>) -> Result<String, String> {
-    println!("Backend: get_group_settings called. group_id: {}", group_id);
-    let client = reqwest::Client::new();
-    let url = format!("{}groups/settings?group_id={}", API_BASE_URL, group_id);
-
-    let mut request = client.get(&url);
 
     if let Some(t) = token {
         if !t.is_empty() {
@@ -1863,24 +1819,26 @@ async fn start_stream(app: tauri::AppHandle, pull_url: String) -> Result<String,
 
     println!("Backend: Using Video='{}', Audio='{}'", video_device, audio_device);
 
-    let args = vec![
+    let mut args = vec![
         "-f".to_string(), "dshow".to_string(),
-        "-rtbufsize".to_string(), "100M".to_string(),
-        "-i".to_string(),
+        "-i".to_string(), 
         if audio_device.is_empty() {
             format!("video={}", video_device)
         } else {
             format!("video={}:audio={}", video_device, audio_device)
         },
         "-c:v".to_string(), "libx264".to_string(),
+        "-b:v".to_string(), "1200k".to_string(),
+        "-pix_fmt".to_string(), "yuv420p".to_string(),
         "-preset".to_string(), "ultrafast".to_string(),
         "-tune".to_string(), "zerolatency".to_string(),
-        "-c:a".to_string(), "aac".to_string(),
+        "-profile:v".to_string(), "baseline".to_string(), // WebRTC requires baseline for broadest support
+        "-c:a".to_string(), "libopus".to_string(), // WebRTC standard audio is Opus
         "-b:a".to_string(), "128k".to_string(),
-        "-ar".to_string(), "44100".to_string(),
-        "-r".to_string(), "25".to_string(),
+        "-ar".to_string(), "48000".to_string(), // Opus strictly prefers 48kHz
+        "-ac".to_string(), "2".to_string(),
         "-f".to_string(), "mpegts".to_string(),
-        pull_url // The target URL, e.g. srt://...
+        pull_url
     ];
     println!("Backend: ffmpeg args: {:?}", args);
 
@@ -1998,14 +1956,12 @@ pub fn run() {
             delete_teacher,
             update_class_avatar,
             update_group_settings,
-            get_group_settings,
             create_file_box,
             create_box_folder,
             save_seat_arrangement,
             get_student_scores,
             get_group_scores,
             exit_app,
-            remote_shutdown_device,
             start_file_drag,
             start_stream,
             stop_stream

@@ -281,7 +281,7 @@ const SearchAddModal = ({ isOpen, onClose, userInfo }: SearchAddModalProps) => {
 
         // Let's assume standard format needed.
         const userId = localStorage.getItem('unique_id') || localStorage.getItem('userid') || localStorage.getItem('teacher_unique_id');
-        const userName = localStorage.getItem('username') || localStorage.getItem('name') || localStorage.getItem('strName') || "Unknown";
+        // const userName = localStorage.getItem('username') || localStorage.getItem('name') || localStorage.getItem('strName') || "Unknown";
 
         if (!userId) {
             console.error("User ID not found in localStorage. Available keys:", Object.keys(localStorage));

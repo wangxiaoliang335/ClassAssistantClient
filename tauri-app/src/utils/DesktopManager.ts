@@ -1,8 +1,8 @@
-import { mkdir, readDir, remove, rename, BaseDirectory, exists, stat } from '@tauri-apps/plugin-fs';
+import { mkdir, readDir, remove, rename, exists } from '@tauri-apps/plugin-fs';
 import { open } from '@tauri-apps/plugin-shell';
 import { join, desktopDir, documentDir, sep } from '@tauri-apps/api/path';
 
-const BOX_BASE_DIR = 'EduDesk/Boxes';
+// const BOX_BASE_DIR = 'EduDesk/Boxes';
 
 export interface FileBoxInfo {
     id: string;
@@ -109,7 +109,7 @@ export const createFolder = async (boxId: string, folderName: string): Promise<v
 export const renameFile = async (oldPath: string, newName: string): Promise<void> => {
     // Need to handle getting parent dir from oldPath
     // This helper might need more robust path handling
-    const parent = oldPath.substring(0, oldPath.lastIndexOf(sep())); // Primitive, assumes separator
+    // const parent = oldPath.substring(0, oldPath.lastIndexOf(sep())); // Primitive, assumes separator
     // Better to use path API if possible, for now assume we pass full oldPath
     // Actually, let's look for last index of / or \
 

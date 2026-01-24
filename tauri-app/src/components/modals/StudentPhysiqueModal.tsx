@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
-import { X } from 'lucide-react';
+// import { X } from 'lucide-react'; // Unused
 
 interface StudentPhysiqueModalProps {
     isOpen: boolean;
@@ -314,7 +314,7 @@ const StudentPhysiqueModal = ({ isOpen, onClose, fileName, data, classId, file, 
         return () => window.removeEventListener('click', handleClick);
     }, []);
 
-    const setScoreToServer = async (rowId: number, colKey: string, newValue: string, studentName: string, studentId: string) => {
+    const setScoreToServer = async (_rowId: number, colKey: string, newValue: string, studentName: string, studentId: string) => {
         let cleanClassId = classId;
         if (!cleanClassId) {
             const match = window.location.pathname.match(/\/class\/(?:chat|schedule)\/([^/]+)/);
